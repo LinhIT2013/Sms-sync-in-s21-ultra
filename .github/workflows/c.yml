@@ -1,1 +1,36 @@
+name: Create Project Directory Structure
 
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  create-dirs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Android Directory Structure
+        run: |
+          # Tạo thư mục gốc và thư mục gradle
+          mkdir -p .github/workflows
+          mkdir -p gradle/wrapper
+
+          # Tạo cấu trúc thư mục module app theo chuẩn com.lcn.smssyncmobile
+          mkdir -p app/src/main/java/com/lcn/smssyncmobile
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+
+          echo "Đã tạo xong toàn bộ cấu trúc thư mục!"
+
+      - name: Commit and push generated directories
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Tự động tạo cây thư mục chuẩn cho ứng dụng" || true
+          git push || true
+          
