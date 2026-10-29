@@ -1,0 +1,1128 @@
+name: Auto Setup Project & Build OneUI APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: 2. Cài đặt JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 3. Đồng bộ google-services.json & Khởi tạo toàn bộ mã nguồn One UI
+        run: |
+          mkdir -p app/src/main/java/com/lcn/smssyncmobile
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+
+          # 1. Ghi file google-services.json mới nhất của bạn
+          cat << 'EOF' > app/google-services.json
+          {
+            "project_info": {
+              "project_number": "419963533121",
+              "project_id": "sms-sync-215cf",
+              "storage_bucket": "sms-sync-215cf.firebasestorage.app"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:419963533121:android:306426d9e6892036c6d3c0",
+                  "android_client_info": {
+                    "package_name": "com.lcn.smssyncmobile"
+                  }
+                },
+                "oauth_client": [
+                  {
+                    "client_id": "419963533121-7169lnq8m7nbs6tptkp832ut5jhns26e.apps.googleusercontent.com",
+                    "client_type": 1,
+                    "android_info": {
+                      "package_name": "com.lcn.smssyncmobile",
+                      "certificate_hash": "d7e4bce1800bfd0b1b4c896d2b8651b830fff144"
+                    }
+                  },
+                  {
+                    "client_id": "419963533121-r7cohbrnuhnp8h732k5s3k3bc21rq0n5.apps.googleusercontent.com",
+                    "client_type": 3
+                  }
+                ],
+                "api_key": [
+                  {
+                    "current_key": "AIzaSyBnciTS-RpxTQQ7TagVpCJ7kQrNY26SWUQ"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": [
+                      {
+                        "client_id": "419963533121-r7cohbrnuhnp8h732k5s3k3bc21rq0n5.apps.googleusercontent.com",
+                        "client_type": 3
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+
+          # 2. Tạo settings.gradle.kts & build.gradle.kts gốc
+          cat << 'EOF' > settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "SmsSyncMobile"
+          include(":app")
+          EOF
+
+          cat << 'EOF' > build.gradle.kts
+          plugins {
+              id("com.android.application") version "8.2.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+              id("com.google.gms.google-services") version "4.4.2" apply false
+          }
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          EOF
+
+          # 3. Tạo app/build.gradle.kts
+          cat << 'EOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("com.google.gms.google-services")
+          }
+
+          android {
+              namespace = "com.lcn.smssyncmobile"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.lcn.smssyncmobile"
+                  minSdk = 24
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              signingConfigs {
+                  getByName("debug") {
+                      val keystoreFile = file("lcn_release.jks")
+                      if (keystoreFile.exists()) {
+                          storeFile = keystoreFile
+                          storePassword = "123456"
+                          keyAlias = "lcn_key"
+                          keyPassword = "123456"
+                      }
+                  }
+              }
+
+              buildTypes {
+                  debug {
+                      signingConfig = signingConfigs.getByName("debug")
+                  }
+                  release {
+                      isMinifyEnabled = false
+                      signingConfig = signingConfigs.getByName("debug")
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.appcompat:appcompat:1.7.0")
+              implementation("com.google.android.material:material:1.12.0")
+              implementation("androidx.recyclerview:recyclerview:1.3.2")
+
+              implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+              implementation("com.google.firebase:firebase-auth")
+              implementation("com.google.firebase:firebase-firestore")
+              implementation("com.google.android.gms:play-services-auth:21.2.0")
+
+              implementation("androidx.work:work-runtime-ktx:2.9.1")
+          }
+          EOF
+
+          # 4. Tạo AndroidManifest.xml
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.lcn.smssyncmobile">
+
+              <uses-permission android:name="android.permission.RECEIVE_SMS" />
+              <uses-permission android:name="android.permission.READ_SMS" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="Đồng Bộ SMS"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.MaterialComponents.Light.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <receiver
+                      android:name=".SmsReceiver"
+                      android:exported="true"
+                      android:permission="android.permission.BROADCAST_SMS">
+                      <intent-filter android:priority="999">
+                          <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+                      </intent-filter>
+                  </receiver>
+              </application>
+          </manifest>
+          EOF
+
+          # 5. Tạo 3 file Giao diện One UI (XML)
+          cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#F2F2F7"
+              android:orientation="vertical">
+
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:orientation="vertical"
+                  android:paddingStart="24dp"
+                  android:paddingTop="42dp"
+                  android:paddingEnd="24dp"
+                  android:paddingBottom="16dp">
+
+                  <RelativeLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content">
+
+                      <TextView
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:text="Tin nhắn đồng bộ"
+                          android:textColor="#000000"
+                          android:textSize="28sp"
+                          android:fontFamily="sans-serif-medium"
+                          android:textStyle="bold" />
+
+                      <com.google.android.material.button.MaterialButton
+                          android:id="@+id/btnOpenSettings"
+                          style="@style/Widget.MaterialComponents.Button.TextButton"
+                          android:layout_width="wrap_content"
+                          android:layout_height="40dp"
+                          android:layout_alignParentEnd="true"
+                          android:layout_centerVertical="true"
+                          android:text="⚙️ Cài đặt"
+                          android:textAllCaps="false"
+                          android:textColor="#0381FE"
+                          android:textSize="15sp"
+                          android:textStyle="bold"
+                          app:rippleColor="#200381FE" />
+                  </RelativeLayout>
+
+                  <TextView
+                      android:id="@+id/tvSubtitle"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="4dp"
+                      android:text="Chưa kết nối tài khoản Google"
+                      android:textColor="#6E6E73"
+                      android:textSize="14sp" />
+              </LinearLayout>
+
+              <com.google.android.material.card.MaterialCardView
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_marginStart="16dp"
+                  android:layout_marginEnd="16dp"
+                  android:layout_marginBottom="14dp"
+                  app:cardBackgroundColor="#FFFFFF"
+                  app:cardCornerRadius="24dp"
+                  app:cardElevation="0dp"
+                  app:strokeWidth="0dp">
+
+                  <LinearLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:orientation="vertical"
+                      android:padding="18dp">
+
+                      <LinearLayout
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:gravity="center_vertical"
+                          android:orientation="horizontal"
+                          android:layout_marginBottom="14dp">
+
+                          <View
+                              android:id="@+id/statusDot"
+                              android:layout_width="10dp"
+                              android:layout_height="10dp"
+                              android:background="@android:drawable/presence_online" />
+
+                          <TextView
+                              android:id="@+id/tvSyncModeStatus"
+                              android:layout_width="0dp"
+                              android:layout_height="wrap_content"
+                              android:layout_marginStart="8dp"
+                              android:layout_weight="1"
+                              android:text="Chế độ: Tự động đồng bộ"
+                              android:textColor="#1C1C1E"
+                              android:textSize="14sp"
+                              android:textStyle="bold" />
+                      </LinearLayout>
+
+                      <LinearLayout
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:orientation="horizontal">
+
+                          <com.google.android.material.button.MaterialButton
+                              android:id="@+id/btnResync"
+                              android:layout_width="0dp"
+                              android:layout_height="48dp"
+                              android:layout_marginEnd="6dp"
+                              android:layout_weight="1"
+                              android:backgroundTint="#E8F2FF"
+                              android:text="⬆️ Đồng bộ lại"
+                              android:textAllCaps="false"
+                              android:textColor="#0381FE"
+                              android:textStyle="bold"
+                              app:cornerRadius="24dp"
+                              app:elevation="0dp" />
+
+                          <com.google.android.material.button.MaterialButton
+                              android:id="@+id/btnRefresh"
+                              android:layout_width="0dp"
+                              android:layout_height="48dp"
+                              android:layout_marginStart="6dp"
+                              android:layout_weight="1"
+                              android:backgroundTint="#0381FE"
+                              android:text="🔄 Làm mới"
+                              android:textAllCaps="false"
+                              android:textColor="#FFFFFF"
+                              android:textStyle="bold"
+                              app:cornerRadius="24dp"
+                              app:elevation="0dp" />
+                      </LinearLayout>
+                  </LinearLayout>
+              </com.google.android.material.card.MaterialCardView>
+
+              <FrameLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent">
+
+                  <androidx.recyclerview.widget.RecyclerView
+                      android:id="@+id/rvSmsList"
+                      android:layout_width="match_parent"
+                      android:layout_height="match_parent"
+                      android:clipToPadding="false"
+                      android:paddingStart="16dp"
+                      android:paddingEnd="16dp"
+                      android:paddingBottom="24dp" />
+
+                  <TextView
+                      android:id="@+id/tvEmptyState"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_gravity="center"
+                      android:text="Chưa có tin nhắn nào được đồng bộ"
+                      android:textColor="#8E8E93"
+                      android:textSize="15sp"
+                      android:visibility="gone" />
+              </FrameLayout>
+          </LinearLayout>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/layout/item_sms_oneui.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:layout_marginBottom="10dp"
+              app:cardBackgroundColor="#FFFFFF"
+              app:cardCornerRadius="20dp"
+              app:cardElevation="0dp"
+              app:strokeWidth="0dp">
+
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:orientation="vertical"
+                  android:padding="16dp">
+
+                  <RelativeLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content">
+
+                      <TextView
+                          android:id="@+id/tvSender"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:text="Tên người gửi"
+                          android:textColor="#000000"
+                          android:textSize="16sp"
+                          android:textStyle="bold" />
+
+                      <TextView
+                          android:id="@+id/tvTime"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_alignParentEnd="true"
+                          android:layout_centerVertical="true"
+                          android:text="12:30"
+                          android:textColor="#8E8E93"
+                          android:textSize="12sp" />
+                  </RelativeLayout>
+
+                  <TextView
+                      android:id="@+id/tvDeviceModel"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="4dp"
+                      android:background="#F2F2F7"
+                      android:paddingStart="8dp"
+                      android:paddingTop="2dp"
+                      android:paddingEnd="8dp"
+                      android:paddingBottom="2dp"
+                      android:text="📱 Thiết bị"
+                      android:textColor="#0381FE"
+                      android:textSize="11sp"
+                      android:textStyle="bold" />
+
+                  <TextView
+                      android:id="@+id/tvBody"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="8dp"
+                      android:lineSpacingExtra="3dp"
+                      android:text="Nội dung tin nhắn"
+                      android:textColor="#2C2C2E"
+                      android:textSize="14sp" />
+              </LinearLayout>
+          </com.google.android.material.card.MaterialCardView>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/layout/dialog_oneui_settings.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:background="#F2F2F7"
+              android:orientation="vertical"
+              android:padding="20dp">
+
+              <View
+                  android:layout_width="40dp"
+                  android:layout_height="4dp"
+                  android:layout_gravity="center_horizontal"
+                  android:layout_marginBottom="16dp"
+                  android:background="#D1D1D6" />
+
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_marginStart="8dp"
+                  android:layout_marginBottom="14dp"
+                  android:text="Cài đặt đồng bộ"
+                  android:textColor="#000000"
+                  android:textSize="22sp"
+                  android:textStyle="bold" />
+
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_marginStart="12dp"
+                  android:layout_marginBottom="6dp"
+                  android:text="TÀI KHOẢN GOOGLE"
+                  android:textColor="#6E6E73"
+                  android:textSize="12sp"
+                  android:textStyle="bold" />
+
+              <com.google.android.material.card.MaterialCardView
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_marginBottom="18dp"
+                  app:cardBackgroundColor="#FFFFFF"
+                  app:cardCornerRadius="20dp"
+                  app:cardElevation="0dp">
+
+                  <LinearLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:orientation="vertical"
+                      android:padding="16dp">
+
+                      <TextView
+                          android:id="@+id/tvSheetAccountEmail"
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:text="Chưa đăng nhập"
+                          android:textColor="#000000"
+                          android:textSize="16sp"
+                          android:textStyle="bold" />
+
+                      <TextView
+                          android:id="@+id/tvSheetAccountUid"
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:layout_marginTop="2dp"
+                          android:layout_marginBottom="12dp"
+                          android:text="Đăng nhập cùng 1 Gmail trên các máy để đồng bộ"
+                          android:textColor="#8E8E93"
+                          android:textSize="13sp" />
+
+                      <com.google.android.material.button.MaterialButton
+                          android:id="@+id/btnSheetGoogleAuth"
+                          android:layout_width="match_parent"
+                          android:layout_height="48dp"
+                          android:backgroundTint="#0381FE"
+                          android:text="Đăng nhập Google"
+                          android:textAllCaps="false"
+                          android:textColor="#FFFFFF"
+                          android:textStyle="bold"
+                          app:cornerRadius="24dp" />
+                  </LinearLayout>
+              </com.google.android.material.card.MaterialCardView>
+
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_marginStart="12dp"
+                  android:layout_marginBottom="6dp"
+                  android:text="PHƯƠNG THỨC ĐỒNG BỘ"
+                  android:textColor="#6E6E73"
+                  android:textSize="12sp"
+                  android:textStyle="bold" />
+
+              <com.google.android.material.card.MaterialCardView
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_marginBottom="16dp"
+                  app:cardBackgroundColor="#FFFFFF"
+                  app:cardCornerRadius="20dp"
+                  app:cardElevation="0dp">
+
+                  <LinearLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:gravity="center_vertical"
+                      android:orientation="horizontal"
+                      android:padding="16dp">
+
+                      <LinearLayout
+                          android:layout_width="0dp"
+                          android:layout_height="wrap_content"
+                          android:layout_weight="1"
+                          android:orientation="vertical"
+                          android:paddingEnd="12dp">
+
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:text="Tự động đồng bộ SMS"
+                              android:textColor="#000000"
+                              android:textSize="16sp"
+                              android:textStyle="bold" />
+
+                          <TextView
+                              android:id="@+id/tvSyncModeDesc"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:layout_marginTop="4dp"
+                              android:text="Bật: Tự động đẩy &amp; nhận SMS ngay khi có tin mới.
+Tắt: Chỉ đồng bộ khi bấm nút thủ công."
+                              android:textColor="#8E8E93"
+                              android:textSize="12sp" />
+                      </LinearLayout>
+
+                      <com.google.android.material.switchmaterial.SwitchMaterial
+                          android:id="@+id/switchAutoSync"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:checked="true" />
+                  </LinearLayout>
+              </com.google.android.material.card.MaterialCardView>
+          </LinearLayout>
+          EOF
+
+          # 6. Tạo 5 file Kotlin trong com/lcn/smssyncmobile
+          cat << 'EOF' > app/src/main/java/com/lcn/smssyncmobile/SyncPrefs.kt
+          package com.lcn.smssyncmobile
+
+          import android.content.Context
+
+          object SyncPrefs {
+              private const val PREF_NAME = "oneui_sms_sync_prefs"
+              private const val KEY_AUTO_SYNC = "is_auto_sync_enabled"
+
+              fun isAutoSync(context: Context): Boolean {
+                  val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                  return prefs.getBoolean(KEY_AUTO_SYNC, true)
+              }
+
+              fun setAutoSync(context: Context, enabled: Boolean) {
+                  val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                  prefs.edit().putBoolean(KEY_AUTO_SYNC, enabled).apply()
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/lcn/smssyncmobile/SmsSyncWorker.kt
+          package com.lcn.smssyncmobile
+
+          import android.content.Context
+          import android.os.Build
+          import androidx.work.Worker
+          import androidx.work.WorkerParameters
+          import com.google.android.gms.tasks.Tasks
+          import com.google.firebase.auth.FirebaseAuth
+          import com.google.firebase.firestore.FirebaseFirestore
+
+          class SmsSyncWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
+              override fun doWork(): Result {
+                  val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return Result.failure()
+                  val sender = inputData.getString("sender") ?: return Result.failure()
+                  val body = inputData.getString("body") ?: return Result.failure()
+                  val timestamp = inputData.getLong("timestamp", System.currentTimeMillis())
+
+                  val docId = "${timestamp}_${sender.hashCode()}"
+                  val smsData = hashMapOf(
+                      "sender" to sender,
+                      "body" to body,
+                      "timestamp" to timestamp,
+                      "deviceModel" to "${Build.MANUFACTURER} ${Build.MODEL}",
+                      "syncedAt" to System.currentTimeMillis()
+                  )
+
+                  return try {
+                      val task = FirebaseFirestore.getInstance()
+                          .collection("users")
+                          .document(uid)
+                          .collection("sms_list")
+                          .document(docId)
+                          .set(smsData)
+                      Tasks.await(task)
+                      Result.success()
+                  } catch (e: Exception) {
+                      Result.retry()
+                  }
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/lcn/smssyncmobile/SmsReceiver.kt
+          package com.lcn.smssyncmobile
+
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.provider.Telephony
+          import androidx.work.Constraints
+          import androidx.work.NetworkType
+          import androidx.work.OneTimeWorkRequestBuilder
+          import androidx.work.WorkManager
+          import androidx.work.workDataOf
+
+          class SmsReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent) {
+                  if (!SyncPrefs.isAutoSync(context)) return
+
+                  if (intent.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
+                      val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+                      if (messages.isNullOrEmpty()) return
+
+                      val sender = messages[0].originatingAddress ?: "Unknown"
+                      val timestamp = messages[0].timestampMillis
+                      val fullBody = StringBuilder()
+                      for (sms in messages) {
+                          fullBody.append(sms.messageBody)
+                      }
+
+                      val data = workDataOf(
+                          "sender" to sender,
+                          "body" to fullBody.toString(),
+                          "timestamp" to timestamp
+                      )
+
+                      val constraints = Constraints.Builder()
+                          .setRequiredNetworkType(NetworkType.CONNECTED)
+                          .build()
+
+                      val syncRequest = OneTimeWorkRequestBuilder<SmsSyncWorker>()
+                          .setInputData(data)
+                          .setConstraints(constraints)
+                          .build()
+
+                      WorkManager.getInstance(context).enqueue(syncRequest)
+                  }
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/lcn/smssyncmobile/SmsAdapter.kt
+          package com.lcn.smssyncmobile
+
+          import android.view.LayoutInflater
+          import android.view.View
+          import android.view.ViewGroup
+          import android.widget.TextView
+          import androidx.recyclerview.widget.RecyclerView
+          import com.google.firebase.firestore.DocumentSnapshot
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          class SmsAdapter(private val onItemClick: (String) -> Unit) :
+              RecyclerView.Adapter<SmsAdapter.SmsViewHolder>() {
+
+              private var smsList: List<DocumentSnapshot> = emptyList()
+              private val sdf = SimpleDateFormat("dd/MM/yyyy • HH:mm:ss", Locale.getDefault())
+
+              fun submitList(newList: List<DocumentSnapshot>) {
+                  smsList = newList
+                  notifyDataSetChanged()
+              }
+
+              override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SmsViewHolder {
+                  val view = LayoutInflater.from(parent.context)
+                      .inflate(R.layout.item_sms_oneui, parent, false)
+                  return SmsViewHolder(view)
+              }
+
+              override fun onBindViewHolder(holder: SmsViewHolder, position: Int) {
+                  val doc = smsList[position]
+                  val sender = doc.getString("sender") ?: "Không rõ"
+                  val body = doc.getString("body") ?: ""
+                  val model = doc.getString("deviceModel") ?: "Thiết bị Android"
+                  val time = doc.getLong("timestamp") ?: 0L
+
+                  holder.tvSender.text = sender
+                  holder.tvBody.text = body
+                  holder.tvDeviceModel.text = "📱 $model"
+                  holder.tvTime.text = sdf.format(Date(time))
+
+                  holder.itemView.setOnClickListener { onItemClick(body) }
+              }
+
+              override fun getItemCount(): Int = smsList.size
+
+              class SmsViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+                  val tvSender: TextView = itemView.findViewById(R.id.tvSender)
+                  val tvTime: TextView = itemView.findViewById(R.id.tvTime)
+                  val tvDeviceModel: TextView = itemView.findViewById(R.id.tvDeviceModel)
+                  val tvBody: TextView = itemView.findViewById(R.id.tvBody)
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/lcn/smssyncmobile/MainActivity.kt
+          package com.lcn.smssyncmobile
+
+          import android.Manifest
+          import android.content.ClipData
+          import android.content.ClipboardManager
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.PowerManager
+          import android.provider.Settings
+          import android.provider.Telephony
+          import android.view.View
+          import android.widget.Button
+          import android.widget.TextView
+          import android.widget.Toast
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.app.ActivityCompat
+          import androidx.recyclerview.widget.LinearLayoutManager
+          import androidx.recyclerview.widget.RecyclerView
+          import com.google.android.gms.auth.api.signin.GoogleSignIn
+          import com.google.android.gms.auth.api.signin.GoogleSignInClient
+          import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+          import com.google.android.gms.common.api.ApiException
+          import com.google.android.material.bottomsheet.BottomSheetDialog
+          import com.google.android.material.button.MaterialButton
+          import com.google.android.material.switchmaterial.SwitchMaterial
+          import com.google.firebase.auth.FirebaseAuth
+          import com.google.firebase.auth.GoogleAuthProvider
+          import com.google.firebase.firestore.DocumentSnapshot
+          import com.google.firebase.firestore.FirebaseFirestore
+          import com.google.firebase.firestore.ListenerRegistration
+          import com.google.firebase.firestore.Query
+          import com.google.firebase.firestore.Source
+
+          class MainActivity : AppCompatActivity() {
+
+              private lateinit var auth: FirebaseAuth
+              private lateinit var db: FirebaseFirestore
+              private lateinit var googleSignInClient: GoogleSignInClient
+
+              private lateinit var tvSubtitle: TextView
+              private lateinit var tvSyncModeStatus: TextView
+              private lateinit var statusDot: View
+              private lateinit var btnResync: MaterialButton
+              private lateinit var btnRefresh: MaterialButton
+              private lateinit var rvSmsList: RecyclerView
+              private lateinit var tvEmptyState: TextView
+              private lateinit var smsAdapter: SmsAdapter
+
+              private var firestoreListener: ListenerRegistration? = null
+
+              private val WEB_CLIENT_ID = "419963533121-r7cohbrnuhnp8h732k5s3k3bc21rq0n5.apps.googleusercontent.com"
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  tvSubtitle = findViewById(R.id.tvSubtitle)
+                  tvSyncModeStatus = findViewById(R.id.tvSyncModeStatus)
+                  statusDot = findViewById(R.id.statusDot)
+                  btnResync = findViewById(R.id.btnResync)
+                  btnRefresh = findViewById(R.id.btnRefresh)
+                  rvSmsList = findViewById(R.id.rvSmsList)
+                  tvEmptyState = findViewById(R.id.tvEmptyState)
+                  val btnOpenSettings = findViewById<Button>(R.id.btnOpenSettings)
+
+                  smsAdapter = SmsAdapter { smsBody ->
+                      val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                      clipboard.setPrimaryClip(ClipData.newPlainText("SMS", smsBody))
+                      Toast.makeText(this, "Đã sao chép nội dung tin nhắn!", Toast.LENGTH_SHORT).show()
+                  }
+                  rvSmsList.layoutManager = LinearLayoutManager(this)
+                  rvSmsList.adapter = smsAdapter
+
+                  auth = FirebaseAuth.getInstance()
+                  db = FirebaseFirestore.getInstance()
+
+                  val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                      .requestIdToken(WEB_CLIENT_ID)
+                      .requestEmail()
+                      .build()
+                  googleSignInClient = GoogleSignIn.getClient(this, gso)
+
+                  requestRequiredPermissions()
+
+                  btnOpenSettings.setOnClickListener { showOneUiSettingsSheet() }
+                  btnResync.setOnClickListener { resyncLocalSmsToCloud(maxCount = 50) }
+                  btnRefresh.setOnClickListener { manualRefreshFromCloud() }
+
+                  applySyncModeAndUpdateUI()
+              }
+
+              private fun showOneUiSettingsSheet() {
+                  val dialog = BottomSheetDialog(this)
+                  val view = layoutInflater.inflate(R.layout.dialog_oneui_settings, null)
+                  dialog.setContentView(view)
+
+                  val tvAccountEmail = view.findViewById<TextView>(R.id.tvSheetAccountEmail)
+                  val tvAccountUid = view.findViewById<TextView>(R.id.tvSheetAccountUid)
+                  val btnGoogleAuth = view.findViewById<MaterialButton>(R.id.btnSheetGoogleAuth)
+                  val switchAutoSync = view.findViewById<SwitchMaterial>(R.id.switchAutoSync)
+
+                  val user = auth.currentUser
+                  if (user != null) {
+                      tvAccountEmail.text = user.email
+                      tvAccountUid.text = "Mã đồng bộ (UID): ${user.uid.take(10)}..."
+                      btnGoogleAuth.text = "Đăng xuất / Đổi tài khoản"
+                      btnGoogleAuth.setBackgroundColor(Color.parseColor("#FF3B30"))
+                  } else {
+                      tvAccountEmail.text = "Chưa đăng nhập"
+                      tvAccountUid.text = "Đăng nhập cùng 1 Gmail trên các máy để đồng bộ"
+                      btnGoogleAuth.text = "Đăng nhập với Google"
+                      btnGoogleAuth.setBackgroundColor(Color.parseColor("#0381FE"))
+                  }
+
+                  btnGoogleAuth.setOnClickListener {
+                      if (auth.currentUser != null) {
+                          auth.signOut()
+                          googleSignInClient.signOut().addOnCompleteListener {
+                              firestoreListener?.remove()
+                              smsAdapter.submitList(emptyList())
+                              applySyncModeAndUpdateUI()
+                              dialog.dismiss()
+                              Toast.makeText(this, "Đã đăng xuất tài khoản", Toast.LENGTH_SHORT).show()
+                          }
+                      } else {
+                          dialog.dismiss()
+                          signInLauncher.launch(googleSignInClient.signInIntent)
+                      }
+                  }
+
+                  switchAutoSync.isChecked = SyncPrefs.isAutoSync(this)
+                  switchAutoSync.setOnCheckedChangeListener { _, isChecked ->
+                      SyncPrefs.setAutoSync(this, isChecked)
+                      applySyncModeAndUpdateUI()
+                      val modeMsg = if (isChecked) "Đã bật Tự động đồng bộ" else "Đã chuyển sang Đồng bộ thủ công"
+                      Toast.makeText(this, modeMsg, Toast.LENGTH_SHORT).show()
+                  }
+
+                  dialog.show()
+              }
+
+              private fun applySyncModeAndUpdateUI() {
+                  val user = auth.currentUser
+                  val isAuto = SyncPrefs.isAutoSync(this)
+
+                  if (user == null) {
+                      tvSubtitle.text = "Chưa kết nối tài khoản • Bấm Cài đặt để đăng nhập"
+                      tvSyncModeStatus.text = "Trạng thái: Ngắt kết nối"
+                      statusDot.setBackgroundResource(android.R.drawable.presence_offline)
+                      tvEmptyState.visibility = View.VISIBLE
+                      return
+                  }
+
+                  tvSubtitle.text = "Tài khoản: ${user.email}"
+
+                  if (isAuto) {
+                      tvSyncModeStatus.text = "Chế độ: Tự động đồng bộ (Real-time)"
+                      statusDot.setBackgroundResource(android.R.drawable.presence_online)
+                      startRealtimeListener(user.uid)
+                  } else {
+                      tvSyncModeStatus.text = "Chế độ: Đồng bộ thủ công (Chỉ tải khi bấm nút)"
+                      statusDot.setBackgroundResource(android.R.drawable.presence_away)
+                      firestoreListener?.remove()
+                      firestoreListener = null
+                      loadOnceFromCacheOrServer(user.uid, Source.DEFAULT)
+                  }
+              }
+
+              private fun startRealtimeListener(uid: String) {
+                  firestoreListener?.remove()
+                  firestoreListener = db.collection("users")
+                      .document(uid)
+                      .collection("sms_list")
+                      .orderBy("timestamp", Query.Direction.DESCENDING)
+                      .limit(50)
+                      .addSnapshotListener { snapshots, error ->
+                          if (error != null || snapshots == null) return@addSnapshotListener
+                          renderSmsList(snapshots.documents)
+                      }
+              }
+
+              private fun loadOnceFromCacheOrServer(uid: String, source: Source) {
+                  db.collection("users")
+                      .document(uid)
+                      .collection("sms_list")
+                      .orderBy("timestamp", Query.Direction.DESCENDING)
+                      .limit(50)
+                      .get(source)
+                      .addOnSuccessListener { result ->
+                          renderSmsList(result.documents)
+                      }
+              }
+
+              private fun renderSmsList(documents: List<DocumentSnapshot>) {
+                  smsAdapter.submitList(documents)
+                  tvEmptyState.visibility = if (documents.isEmpty()) View.VISIBLE else View.GONE
+              }
+
+              private fun resyncLocalSmsToCloud(maxCount: Int) {
+                  val user = auth.currentUser
+                  if (user == null) {
+                      Toast.makeText(this, "Hãy mở Cài đặt và đăng nhập Google trước!", Toast.LENGTH_SHORT).show()
+                      showOneUiSettingsSheet()
+                      return
+                  }
+
+                  if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                      requestRequiredPermissions()
+                      return
+                  }
+
+                  btnResync.isEnabled = false
+                  btnResync.text = "⏳ Đang đẩy..."
+
+                  val cursor = contentResolver.query(
+                      Telephony.Sms.Inbox.CONTENT_URI,
+                      arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+                      null, null,
+                      "${Telephony.Sms.DATE} DESC LIMIT $maxCount"
+                  )
+
+                  if (cursor == null || !cursor.moveToFirst()) {
+                      cursor?.close()
+                      btnResync.isEnabled = true
+                      btnResync.text = "⬆️ Đồng bộ lại"
+                      Toast.makeText(this, "Hộp thư đến trống!", Toast.LENGTH_SHORT).show()
+                      return
+                  }
+
+                  val batch = db.batch()
+                  val colRef = db.collection("users").document(user.uid).collection("sms_list")
+                  val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
+                  var count = 0
+
+                  val addrIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+                  val bodyIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
+                  val dateIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
+
+                  do {
+                      val sender = cursor.getString(addrIdx) ?: "Unknown"
+                      val body = cursor.getString(bodyIdx) ?: ""
+                      val timestamp = cursor.getLong(dateIdx)
+                      val docId = "${timestamp}_${sender.hashCode()}"
+
+                      val smsData = hashMapOf(
+                          "sender" to sender,
+                          "body" to body,
+                          "timestamp" to timestamp,
+                          "deviceModel" to deviceName,
+                          "syncedAt" to System.currentTimeMillis()
+                      )
+                      batch.set(colRef.document(docId), smsData)
+                      count++
+                  } while (cursor.moveToNext())
+                  cursor.close()
+
+                  batch.commit().addOnCompleteListener { task ->
+                      btnResync.isEnabled = true
+                      btnResync.text = "⬆️ Đồng bộ lại"
+                      if (task.isSuccessful) {
+                          Toast.makeText(this, "Đã đồng bộ $count tin nhắn lên Cloud!", Toast.LENGTH_SHORT).show()
+                          if (!SyncPrefs.isAutoSync(this)) manualRefreshFromCloud()
+                      } else {
+                          Toast.makeText(this, "Lỗi: ${task.exception?.message}", Toast.LENGTH_LONG).show()
+                      }
+                  }
+              }
+
+              private fun manualRefreshFromCloud() {
+                  val user = auth.currentUser
+                  if (user == null) {
+                      Toast.makeText(this, "Hãy mở Cài đặt và đăng nhập Google trước!", Toast.LENGTH_SHORT).show()
+                      showOneUiSettingsSheet()
+                      return
+                  }
+
+                  btnRefresh.isEnabled = false
+                  btnRefresh.text = "⏳ Đang tải..."
+
+                  db.collection("users")
+                      .document(user.uid)
+                      .collection("sms_list")
+                      .orderBy("timestamp", Query.Direction.DESCENDING)
+                      .limit(50)
+                      .get(Source.SERVER)
+                      .addOnCompleteListener { task ->
+                          btnRefresh.isEnabled = true
+                          btnRefresh.text = "🔄 Làm mới"
+                          if (task.isSuccessful && task.result != null) {
+                              renderSmsList(task.result.documents)
+                              Toast.makeText(this, "Đã cập nhật danh sách mới nhất!", Toast.LENGTH_SHORT).show()
+                          } else {
+                              Toast.makeText(this, "Lỗi kết nối Server!", Toast.LENGTH_SHORT).show()
+                          }
+                      }
+              }
+
+              private val signInLauncher = registerForActivityResult(
+                  ActivityResultContracts.StartActivityForResult()
+              ) { result ->
+                  val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                  try {
+                      val account = task.getResult(ApiException::class.java)!!
+                      val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+                      auth.signInWithCredential(credential).addOnCompleteListener(this) { authTask ->
+                          if (authTask.isSuccessful) {
+                              Toast.makeText(this, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
+                              applySyncModeAndUpdateUI()
+                          }
+                      }
+                  } catch (e: ApiException) {
+                      Toast.makeText(this, "Lỗi Google Sign-In: Mã ${e.statusCode}", Toast.LENGTH_LONG).show()
+                  }
+              }
+
+              private fun requestRequiredPermissions() {
+                  val permissions = arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
+                  if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                      ActivityCompat.requestPermissions(this, permissions, 101)
+                  }
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                      val pm = getSystemService(POWER_SERVICE) as PowerManager
+                      if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                          startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                              data = Uri.parse("package:$packageName")
+                          })
+                      }
+                  }
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  firestoreListener?.remove()
+              }
+          }
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Đồng bộ google-services.json mới và khởi tạo toàn bộ project One UI" || true
+          git push || true
+
+      - name: 4. Cài đặt Gradle & Build APK
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
+
+      - name: 5. Đóng gói file `file-tag: code-generated-file-0000000000`
+        run: gradle assembleDebug
+
+      - name: 6. Xuất file APK hoàn chỉnh
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dong-Bo-SMS-OneUI-APK
+          path: app/build/outputs/apk/debug/*.apk
