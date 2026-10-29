@@ -14,7 +14,10 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.provider.Telephony
 import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,7 +56,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var smsAdapter: SmsAdapter
 
     private var firestoreListener: ListenerRegistration? = null
-
     private val WEB_CLIENT_ID = "419963533121-r7cohbrnuhnp8h732k5s3k3bc21rq0n5.apps.googleusercontent.com"
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,7 +91,10 @@ class MainActivity : AppCompatActivity() {
         requestRequiredPermissions()
 
         btnOpenSettings.setOnClickListener { showOneUiSettingsSheet() }
-        btnResync.setOnClickListener { resyncLocalSmsToCloud(maxCount = 50) }
+        btnResync.setOnClickListener { 
+            val limit = SyncPrefs.getSmsLimit(this)
+            resyncLocalSmsToCloud(maxCount = limit)
+        }
         btnRefresh.setOnClickListener { manualRefreshFromCloud() }
 
         applySyncModeAndUpdateUI()
@@ -104,6 +109,7 @@ class MainActivity : AppCompatActivity() {
         val tvAccountUid = view.findViewById<TextView>(R.id.tvSheetAccountUid)
         val btnGoogleAuth = view.findViewById<MaterialButton>(R.id.btnSheetGoogleAuth)
         val switchAutoSync = view.findViewById<SwitchMaterial>(R.id.switchAutoSync)
+        val spinnerSmsLimit = view.findViewById<Spinner>(R.id.spinnerSmsLimit)
 
         val user = auth.currentUser
         if (user != null) {
@@ -142,6 +148,30 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, modeMsg, Toast.LENGTH_SHORT).show()
         }
 
+        // Cấu hình Spinner chọn giới hạn tin nhắn (10, 20, 30, 50)
+        val limitOptions = arrayOf("10 tin nhắn gần nhất", "20 tin nhắn gần nhất", "30 tin nhắn gần nhất", "50 tin nhắn gần nhất")
+        val limitValues = intArrayOf(10, 20, 30, 50)
+        
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, limitOptions)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerSmsLimit.adapter = adapter
+
+        val currentLimit = SyncPrefs.getSmsLimit(this)
+        val selectedIndex = limitValues.indexOf(currentLimit).takeIf { it >= 0 } ?: 3
+        spinnerSmsLimit.setSelection(selectedIndex)
+
+        spinnerSmsLimit.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
+                val chosenLimit = limitValues[position]
+                if (chosenLimit != SyncPrefs.getSmsLimit(this@MainActivity)) {
+                    SyncPrefs.setSmsLimit(this@MainActivity, chosenLimit)
+                    applySyncModeAndUpdateUI()
+                    Toast.makeText(this@MainActivity, "Đã chọn giới hạn: $chosenLimit tin", Toast.LENGTH_SHORT).show()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>) {}
+        }
+
         dialog.show()
     }
 
@@ -164,7 +194,7 @@ class MainActivity : AppCompatActivity() {
             statusDot.setBackgroundResource(android.R.drawable.presence_online)
             startRealtimeListener(user.uid)
         } else {
-            tvSyncModeStatus.text = "Chế độ: Đồng bộ thủ công (Chỉ tải khi bấm nút)"
+            tvSyncModeStatus.text = "Chế độ: Đồng bộ thủ công"
             statusDot.setBackgroundResource(android.R.drawable.presence_away)
             firestoreListener?.remove()
             firestoreListener = null
@@ -174,11 +204,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun startRealtimeListener(uid: String) {
         firestoreListener?.remove()
+        val limit = SyncPrefs.getSmsLimit(this).toLong()
+
         firestoreListener = db.collection("users")
             .document(uid)
             .collection("sms_list")
             .orderBy("timestamp", Query.Direction.DESCENDING)
-            .limit(50)
+            .limit(limit)
             .addSnapshotListener { snapshots, error ->
                 if (error != null || snapshots == null) return@addSnapshotListener
                 renderSmsList(snapshots.documents)
@@ -186,11 +218,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadOnceFromCacheOrServer(uid: String, source: Source) {
+        val limit = SyncPrefs.getSmsLimit(this).toLong()
+
         db.collection("users")
             .document(uid)
             .collection("sms_list")
             .orderBy("timestamp", Query.Direction.DESCENDING)
-            .limit(50)
+            .limit(limit)
             .get(source)
             .addOnSuccessListener { result ->
                 renderSmsList(result.documents)
@@ -283,11 +317,13 @@ class MainActivity : AppCompatActivity() {
         btnRefresh.isEnabled = false
         btnRefresh.text = "⏳ Đang tải..."
 
+        val limit = SyncPrefs.getSmsLimit(this).toLong()
+
         db.collection("users")
             .document(user.uid)
             .collection("sms_list")
             .orderBy("timestamp", Query.Direction.DESCENDING)
-            .limit(50)
+            .limit(limit)
             .get(Source.SERVER)
             .addOnCompleteListener { task ->
                 btnRefresh.isEnabled = true
