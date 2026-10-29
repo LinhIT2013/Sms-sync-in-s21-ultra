@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "419963533121",
+    "project_id": "sms-sync-215cf",
+    "storage_bucket": "sms-sync-215cf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:419963533121:android:306426d9e6892036c6d3c0",
+        "android_client_info": {
+          "package_name": "com.lcn.smssyncmobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "419963533121-7169lnq8m7nbs6tptkp832ut5jhns26e.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.lcn.smssyncmobile",
+            "certificate_hash": "d7e4bce1800bfd0b1b4c896d2b8651b830fff144"
+          }
+        },
+        {
+          "client_id": "419963533121-r7cohbrnuhnp8h732k5s3k3bc21rq0n5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnciTS-RpxTQQ7TagVpCJ7kQrNY26SWUQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "419963533121-r7cohbrnuhnp8h732k5s3k3bc21rq0n5.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
