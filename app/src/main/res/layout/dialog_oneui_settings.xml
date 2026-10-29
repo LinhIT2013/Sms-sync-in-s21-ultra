@@ -153,19 +153,20 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Số lượng tin nhắn mới nhất đồng bộ"
+                android:text="Số lượng tin nhắn mới nhất cần đồng bộ"
                 android:textColor="#000000"
                 android:textSize="15sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp" />
 
+            <!-- Đảm bảo Spinner có chiều cao rõ ràng và nền trắng viền xám để hiển thị tốt -->
             <Spinner
                 android:id="@+id/spinnerSmsLimit"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:background="#F2F2F7"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp" />
+                android:layout_height="52dp"
+                android:background="@android:drawable/btn_dropdown"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 </LinearLayout>
