@@ -1,4 +1,4 @@
-name: Auto Build SMS Sync APK
+name: Build SMS Sync APK
 
 on:
   push:
@@ -19,12 +19,18 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 3. Cấp quyền và Build APK
+      - name: 3. Tự động tạo Gradle Wrapper (gradlew) nếu chưa có
         run: |
+          if [ ! -f gradlew ]; then
+            echo "Đang tạo Gradle Wrapper..."
+            gradle wrapper --gradle-version 8.5
+          fi
           chmod +x gradlew
-          ./gradlew assembleDebug
 
-      - name: 4. Xuất file APK hoàn chỉnh
+      - name: 4. Build APK bằng Gradle
+        run: ./gradlew assembleDebug
+
+      - name: 5. Xuất file APK hoàn chỉnh
         uses: actions/upload-artifact@v4
         with:
           name: Dong-Bo-SMS-APK
