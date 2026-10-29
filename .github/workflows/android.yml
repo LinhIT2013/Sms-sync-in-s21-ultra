@@ -3,7 +3,10 @@ name: Build APK & Get SHA-1
 on:
   push:
     branches: [ "main", "master" ]
-  workflow_dispatch: # Cho phép bấm nút chạy thủ công trên web GitHub
+  workflow_dispatch:
+
+permissions:
+  contents: write # Cho phép GitHub Actions tự động lưu file Keystore vào thẳng Repo
 
 jobs:
   build:
@@ -19,8 +22,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 3. Tạo Keystore & Lấy mã SHA-1 (Xem ở phần Log này)
+      - name: 3. Tạo thư mục app, tạo Keystore & In mã SHA-1
         run: |
+          mkdir -p app
           if [ ! -f app/lcn_release.jks ]; then
             keytool -genkeypair -v \
               -keystore app/lcn_release.jks \
@@ -28,24 +32,30 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass 123456 -keypass 123456 \
               -dname "CN=Linh Cong Nghe, OU=LCN, O=LCN, L=NinhBinh, S=NB, C=VN"
+            
+            # Tự động lưu vĩnh viễn file lcn_release.jks vào thẳng nhánh GitHub của bạn
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add app/lcn_release.jks
+            git commit -m "Tự động tạo và lưu cố định Keystore lcn_release.jks" || true
+            git push || true
           fi
-          echo "=========================================="
-          echo "MÃ SHA-1 CỦA BẠN ĐỂ DÁN VÀO FIREBASE LÀ:"
+          echo "=========================================================="
+          echo "MÃ SHA-1 CỦA BẠN ĐỂ COPY DÁN VÀO FIREBASE LÀ:"
           keytool -list -v -keystore app/lcn_release.jks -alias lcn_key -storepass 123456 | grep "SHA1:"
-          echo "=========================================="
+          echo "=========================================================="
 
-      - name: 4. Tải file Keystore về để lưu cố định vào Repo
-        uses: actions/upload-artifact@v4
-        with:
-          name: Keystore-Co-Dinh
-          path: app/lcn_release.jks
-
-      - name: 5. Cấp quyền và Build APK
+      - name: 4. Build APK (Chỉ chạy khi bạn đã đưa code lên)
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug
+          else
+            echo "Đã tạo xong Keystore và lấy được SHA-1! Hãy thêm các file code để bắt đầu build APK."
+          fi
 
-      - name: 6. Tải file APK hoàn chỉnh
+      - name: 5. Tải file APK hoàn chỉnh
+        if: hashFiles('app/build/outputs/apk/debug/*.apk') != ''
         uses: actions/upload-artifact@v4
         with:
           name: SMS-Sync-OneUI-APK
