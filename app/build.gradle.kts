@@ -6,14 +6,14 @@ plugins {
 
 android {
     namespace = "com.lcn.smssyncmobile"
-    compileSdk = 36
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.lcn.smssyncmobile"
-        minSdk = 26
-        targetSdk = 36
-        versionCode = 3
-        versionName = "1.2"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
     }
 
     signingConfigs {
@@ -79,5 +79,4 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     implementation("androidx.work:work-runtime-ktx:2.9.1")
-    implementation("com.android.billingclient:billing:8.0.0")
 }
