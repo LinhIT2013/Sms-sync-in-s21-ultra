@@ -23,8 +23,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.0'
-          # Đã sửa thuộc tính chính xác để tắt hàng rào bảo mật quét file Jar trống
+          gradle-version: '8.4'
           validate-wrappers: false
 
       - name: Decode Keystore file
