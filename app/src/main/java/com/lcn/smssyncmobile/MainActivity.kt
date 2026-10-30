@@ -518,7 +518,7 @@ class MainActivity : AppCompatActivity(), PurchasesUpdatedListener {
         db.collection("users")
             .document(user.uid)
             .collection("sms_list")
-            .orderBy("timestamp", Query.Duration.DESCENDING)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
             .limit(limit)
             .get(Source.SERVER)
             .addOnCompleteListener { task ->
