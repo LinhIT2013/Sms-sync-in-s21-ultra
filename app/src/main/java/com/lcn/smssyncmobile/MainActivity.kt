@@ -39,7 +39,14 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
-
+import android.content.Context
+import android.os.Bundle
+import android.view.View
+import android.widget.Button
+import android.widget.RelativeLayout
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.android.billingclient.api.*
 class MainActivity : AppCompatActivity() {
 
     private lateinit var auth: FirebaseAuth
@@ -54,6 +61,145 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rvSmsList: RecyclerView
     private lateinit var tvEmptyState: TextView
     private lateinit var smsAdapter: SmsAdapter
+    private lateinit var billingClient: BillingClient
+    private val premiumProductId = "app_premium_license" // ID sản phẩm bạn sẽ tạo trên CH Play Console
+    
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        // 1. Kiểm tra thời gian dùng thử và trạng thái bản quyền trước
+        checkLicenseAndTrialStatus()
+
+        // 2. Khởi tạo Google Play Billing Client
+        setupBillingClient()
+
+        // 3. Đăng ký sự kiện nút bấm mua hàng bên ngoài Menu hoặc trên Màn hình khóa
+        findViewById<Button>(R.id.btnBuyPremiumLock).setOnClickListener { launchBillingFlow() }
+        // findViewById<Button>(R.id.btnMenuBuyPremium)?.setOnClickListener { launchBillingFlow() }
+    }
+
+    private fun checkLicenseAndTrialStatus() {
+        val sharedPref = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val isPurchased = sharedPref.getBoolean("is_premium", false)
+        
+        if (isPurchased) {
+            // Đã mua bản quyền -> Mở ứng dụng bình thường
+            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
+            return
+        }
+
+        // Kiểm tra ngày đầu tiên mở ứng dụng
+        var firstLaunchTime = sharedPref.getLong("first_launch_time", 0L)
+        if (firstLaunchTime == 0L) {
+            firstLaunchTime = System.currentTimeMillis()
+            sharedPref.edit().putLong("first_launch_time", firstLaunchTime).apply()
+        }
+
+        // Tính số ngày đã trôi qua (5 ngày = 5 * 24 * 60 * 60 * 1000 ms)
+        val fiveDaysInMs = 5L * 24 * 60 * 60 * 1000
+        val currentTime = System.currentTimeMillis()
+
+        if (currentTime - firstLaunchTime > fiveDaysInMs) {
+            // Hết hạn 5 ngày -> Khóa toàn bộ màn hình
+            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.VISIBLE
+        } else {
+            // Còn trong hạn dùng thử
+            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
+        }
+    }
+
+    private fun setupBillingClient() {
+        billingClient = BillingClient.newBuilder(this)
+            .setListener { billingResult, purchases ->
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
+                    for (purchase in purchases) {
+                        handlePurchase(purchase)
+                    }
+                }
+            }
+            .enablePendingPurchases()
+            .build()
+
+        billingClient.startConnection(object : BillingClientStateListener {
+            override fun onBillingSetupFinished(billingResult: BillingResult) {
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                    // Kết nối cổng thanh toán CH Play thành công
+                    queryPurchasesOnLaunch()
+                }
+            }
+            override fun onBillingServiceDisconnected() {
+                // Kết nối lại nếu bị ngắt giữa chừng
+            }
+        })
+    }
+
+    private fun launchBillingFlow() {
+        val productList = listOf(
+            QueryProductDetailsParams.Product.newBuilder()
+                .setProductId(premiumProductId)
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build()
+        )
+        val params = QueryProductDetailsParams.newBuilder().setProductList(productList).build()
+
+        billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && productDetailsList.isNotEmpty()) {
+                val productDetails = productDetailsList[0]
+                val billingFlowParams = BillingFlowParams.newBuilder()
+                    .setProductDetailsParamsList(listOf(
+                        BillingFlowParams.ProductDetailsParams.newBuilder()
+                            .setProductDetails(productDetails)
+                            .build()
+                    ))
+                    .build()
+                billingClient.launchBillingFlow(this, billingFlowParams)
+            } else {
+                runOnUiThread { Toast.makeText(this, "Không thể kết nối sản phẩm từ CH Play", Toast.LENGTH_SHORT).show() }
+            }
+        }
+    }
+
+    private fun handlePurchase(purchase: Purchase) {
+        if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
+            // Xác thực giao dịch nếu chưa được xác thực (Bắt buộc theo quy định Google)
+            if (!purchase.isAcknowledged) {
+                val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
+                    .setPurchaseToken(purchase.purchaseToken)
+                    .build()
+                billingClient.acknowledgePurchase(acknowledgePurchaseParams) { billingResult ->
+                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                        savePremiumStatus(true)
+                    }
+                }
+            } else {
+                savePremiumStatus(true)
+            }
+        }
+    }
+
+    private fun queryPurchasesOnLaunch() {
+        // Kiểm tra xem lịch sử người dùng này đã từng mua sản phẩm này chưa (Ví dụ khi họ cài lại ứng dụng)
+        billingClient.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()
+        ) { billingResult, purchaseList ->
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                val hasPremium = purchaseList.any { it.products.contains(premiumProductId) && it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                savePremiumStatus(hasPremium)
+            }
+        }
+    }
+
+    private fun savePremiumStatus(isPremium: Boolean) {
+        val sharedPref = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        sharedPref.edit().putBoolean("is_premium", isPremium).apply()
+        runOnUiThread {
+            if (isPremium) {
+                findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
+                Toast.makeText(this, "Kích hoạt bản quyền thành công!", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     private var firestoreListener: ListenerRegistration? = null
     private val WEB_CLIENT_ID = "419963533121-r7cohbrnuhnp8h732k5s3k3bc21rq0n5.apps.googleusercontent.com"
