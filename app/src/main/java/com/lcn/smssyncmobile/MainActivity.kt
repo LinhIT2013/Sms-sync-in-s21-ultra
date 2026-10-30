@@ -55,51 +55,93 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rvSmsList: RecyclerView
     private lateinit var tvEmptyState: TextView
     private lateinit var smsAdapter: SmsAdapter
-    private lateinit var billingClient: BillingClient
-    private val premiumProductId = "smssyncmobile1" // ID sản phẩm bạn sẽ tạo trên CH Play Console
     
+    // Biến phục vụ chức năng Mua Bản Quyền qua Google Play Billing
+    private lateinit var billingClient: BillingClient
+    private val premiumProductId = "app_premium_license"
+
+    private var firestoreListener: ListenerRegistration? = null
+    private val WEB_CLIENT_ID = "://googleusercontent.com"
+
+    // DUY NHẤT MỘT HÀM ONCREATE ĐÃ ĐƯỢC HỢP NHẤT TOÀN DIỆN TẠI ĐÂY
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 1. Kiểm tra thời gian dùng thử và trạng thái bản quyền trước
+        // 1. Kiểm tra thời gian dùng thử và trạng thái bản quyền của ứng dụng
         checkLicenseAndTrialStatus()
 
-        // 2. Khởi tạo Google Play Billing Client
+        // 2. Khởi tạo dịch vụ Google Play Billing xử lý mua hàng vĩnh viễn
         setupBillingClient()
+        findViewById<Button>(R.id.btnBuyPremiumLock)?.setOnClickListener { launchBillingFlow() }
 
-        // 3. Đăng ký sự kiện nút bấm mua hàng bên ngoài Menu hoặc trên Màn hình khóa
-        findViewById<Button>(R.id.btnBuyPremiumLock).setOnClickListener { launchBillingFlow() }
-        // findViewById<Button>(R.id.btnMenuBuyPremium)?.setOnClickListener { launchBillingFlow() }
+        // 3. Khởi tạo toàn bộ thành phần giao diện gốc của ứng dụng
+        tvSubtitle = findViewById(R.id.tvSubtitle)
+        tvSyncModeStatus = findViewById(R.id.tvSyncModeStatus)
+        statusDot = findViewById(R.id.statusDot)
+        btnResync = findViewById(R.id.btnResync)
+        btnRefresh = findViewById(R.id.btnRefresh)
+        rvSmsList = findViewById(R.id.rvSmsList)
+        tvEmptyState = findViewById(R.id.tvEmptyState)
+        val btnOpenSettings = findViewById<Button>(R.id.btnOpenSettings)
+
+        // Cấu hình danh sách hiển thị SMS và tính năng sao chép nhanh
+        smsAdapter = SmsAdapter { smsBody ->
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("SMS", smsBody))
+            Toast.makeText(this, "Đã sao chép nội dung tin nhắn!", Toast.LENGTH_SHORT).show()
+        }
+        rvSmsList.layoutManager = LinearLayoutManager(this)
+        rvSmsList.adapter = smsAdapter
+
+        // Khởi tạo lõi cơ sở dữ liệu Firebase
+        auth = FirebaseAuth.getInstance()
+        db = FirebaseFirestore.getInstance()
+
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(WEB_CLIENT_ID)
+            .requestEmail()
+            .build()
+        googleSignInClient = GoogleSignIn.getClient(this, gso)
+
+        // Kiểm tra cấp quyền hệ thống và thiết lập trình lắng nghe sự kiện
+        requestRequiredPermissions()
+
+        btnOpenSettings.setOnClickListener { showOneUiSettingsSheet() }
+        btnResync.setOnClickListener { 
+            val limit = SyncPrefs.getSmsLimit(this)
+            resyncLocalSmsToCloud(maxCount = limit)
+        }
+        btnRefresh.setOnClickListener { manualRefreshFromCloud() }
+
+        applySyncModeAndUpdateUI()
     }
 
+    // ==========================================
+    // KHỐI QUẢN LÝ BẢN QUYỀN (5 NGÀY DÙNG THỬ & KHÓA)
+    // ==========================================
     private fun checkLicenseAndTrialStatus() {
         val sharedPref = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
         val isPurchased = sharedPref.getBoolean("is_premium", false)
         
         if (isPurchased) {
-            // Đã mua bản quyền -> Mở ứng dụng bình thường
-            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
+            findViewById<RelativeLayout>(R.id.layoutLockScreen)?.visibility = View.GONE
             return
         }
 
-        // Kiểm tra ngày đầu tiên mở ứng dụng
         var firstLaunchTime = sharedPref.getLong("first_launch_time", 0L)
         if (firstLaunchTime == 0L) {
             firstLaunchTime = System.currentTimeMillis()
             sharedPref.edit().putLong("first_launch_time", firstLaunchTime).apply()
         }
 
-        // Tính số ngày đã trôi qua (5 ngày = 5 * 24 * 60 * 60 * 1000 ms)
         val fiveDaysInMs = 5L * 24 * 60 * 60 * 1000
         val currentTime = System.currentTimeMillis()
 
         if (currentTime - firstLaunchTime > fiveDaysInMs) {
-            // Hết hạn 5 ngày -> Khóa toàn bộ màn hình
-            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.VISIBLE
+            findViewById<RelativeLayout>(R.id.layoutLockScreen)?.visibility = View.VISIBLE
         } else {
-            // Còn trong hạn dùng thử
-            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
+            findViewById<RelativeLayout>(R.id.layoutLockScreen)?.visibility = View.GONE
         }
     }
 
@@ -118,12 +160,11 @@ class MainActivity : AppCompatActivity() {
         billingClient.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(billingResult: BillingResult) {
                 if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                    // Kết nối cổng thanh toán CH Play thành công
                     queryPurchasesOnLaunch()
                 }
             }
             override fun onBillingServiceDisconnected() {
-                // Kết nối lại nếu bị ngắt giữa chừng
+                // Tự động kết nối lại nếu hệ thống ngắt dịch vụ bất ngờ
             }
         })
     }
@@ -156,7 +197,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun handlePurchase(purchase: Purchase) {
         if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-            // Xác thực giao dịch nếu chưa được xác thực (Bắt buộc theo quy định Google)
             if (!purchase.isAcknowledged) {
                 val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
                     .setPurchaseToken(purchase.purchaseToken)
@@ -173,7 +213,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun queryPurchasesOnLaunch() {
-        // Kiểm tra xem lịch sử người dùng này đã từng mua sản phẩm này chưa (Ví dụ khi họ cài lại ứng dụng)
         billingClient.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()
         ) { billingResult, purchaseList ->
