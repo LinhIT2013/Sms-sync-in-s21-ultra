@@ -1,0 +1,42 @@
+name: Auto Create Mipmap Icon Folders
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  create-icon-folders:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: 1. Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: 2. Tạo cây thư mục mipmap cho Icon
+        run: |
+          mkdir -p app/src/main/res/mipmap-mdpi
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/res/mipmap-xhdpi
+          mkdir -p app/src/main/res/mipmap-xxhdpi
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
+          
+          # Tạo file .gitkeep để Git lưu vết các thư mục trống
+          touch app/src/main/res/mipmap-mdpi/.gitkeep
+          touch app/src/main/res/mipmap-hdpi/.gitkeep
+          touch app/src/main/res/mipmap-xhdpi/.gitkeep
+          touch app/src/main/res/mipmap-xxhdpi/.gitkeep
+          touch app/src/main/res/mipmap-xxxhdpi/.gitkeep
+
+      - name: 3. Tự động commit và đẩy lên GitHub
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-create mipmap icon directories" && git push)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
