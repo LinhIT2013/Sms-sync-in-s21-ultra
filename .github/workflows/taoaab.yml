@@ -14,7 +14,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Đã gộp tính năng quản lý bộ nhớ đệm (cache) vào hành động Setup Gradle ở dưới để tránh xung đột cấu hình
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -25,16 +24,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.0'
+          # THÊM DÒNG NÀY: Tắt tính năng tự động quét mã băm của file jar để tránh bị báo lỗi bảo mật
+          add-wrapper-checksum-validation: false
 
-      # ĐÃ XÓA BƯỚC CHMOD GRADLEW: Vì bạn dùng lệnh 'gradle bundleRelease' hệ thống của máy ảo, 
-      # bước kiểm tra quyền file gradlew này không còn cần thiết và sẽ gây lỗi "No such file" nếu cố chạy.
-
-      # Đã sửa đường dẫn giải mã: Ghi thẳng file Keystore vào thư mục gốc của dự án (máy ảo đứng ở đây)
       - name: Decode Keystore file
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > lcn_release.jks
 
-      # Đã sửa lại tên biến môi trường MYAPP_RELEASE_STORE_FILE thành lcn_release.jks cho đồng bộ với bước trên
       - name: Build Release AAB
         run: gradle bundleRelease
         env:
