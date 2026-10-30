@@ -17,7 +17,6 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
-import android.widget.RelativeLayout
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
@@ -26,7 +25,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.android.billingclient.api.*
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -43,6 +41,7 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
 
 class MainActivity : AppCompatActivity() {
+
     private lateinit var auth: FirebaseAuth
     private lateinit var db: FirebaseFirestore
     private lateinit var googleSignInClient: GoogleSignInClient
@@ -52,58 +51,26 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusDot: View
     private lateinit var btnResync: MaterialButton
     private lateinit var btnRefresh: MaterialButton
-    private lateinit var btnOpenSettings: MaterialButton
     private lateinit var rvSmsList: RecyclerView
     private lateinit var tvEmptyState: TextView
     private lateinit var smsAdapter: SmsAdapter
-	
-    private lateinit var billingClient: BillingClient
-    private val premiumProductId = "smssyncmobile1" 
-    
+
     private var firestoreListener: ListenerRegistration? = null
     private val WEB_CLIENT_ID = "419963533121-r7cohbrnuhnp8h732k5s3k3bc21rq0n5.apps.googleusercontent.com"
 
-    // Đăng ký ActivityResult được đưa lên đầu class theo đúng chuẩn lifecycle Android
-    private val signInLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        try {
-            val account = task.getResult(ApiException::class.java)!!
-            val credential = GoogleAuthProvider.getCredential(account.idToken, null)
-            auth.signInWithCredential(credential).addOnCompleteListener(this) { authTask ->
-                if (authTask.isSuccessful) {
-                    Toast.makeText(this, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
-                    applySyncModeAndUpdateUI()
-                }
-            }
-        } catch (e: ApiException) {
-            Toast.makeText(this, "Lỗi Google Sign-In: Mã ${e.statusCode}", Toast.LENGTH_LONG).show()
-        }
-    }
-	
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 1. Ánh xạ các View từ XML
         tvSubtitle = findViewById(R.id.tvSubtitle)
         tvSyncModeStatus = findViewById(R.id.tvSyncModeStatus)
         statusDot = findViewById(R.id.statusDot)
         btnResync = findViewById(R.id.btnResync)
         btnRefresh = findViewById(R.id.btnRefresh)
-        btnOpenSettings = findViewById(R.id.btnOpenSettings)
         rvSmsList = findViewById(R.id.rvSmsList)
         tvEmptyState = findViewById(R.id.tvEmptyState)
+        val btnOpenSettings = findViewById<Button>(R.id.btnOpenSettings)
 
-        // 2. Khởi tạo dịch vụ nền tảng & Bản quyền
-        auth = FirebaseAuth.getInstance()
-        db = FirebaseFirestore.getInstance()
-
-        checkLicenseAndTrialStatus()
-        setupBillingClient()
-
-        // 3. Thiết lập RecyclerView & Adapter hiển thị tin nhắn
         smsAdapter = SmsAdapter { smsBody ->
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("SMS", smsBody))
@@ -112,20 +79,17 @@ class MainActivity : AppCompatActivity() {
         rvSmsList.layoutManager = LinearLayoutManager(this)
         rvSmsList.adapter = smsAdapter
 
-        // 4. Cấu hình Google Sign-In
+        auth = FirebaseAuth.getInstance()
+        db = FirebaseFirestore.getInstance()
+
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(WEB_CLIENT_ID)
             .requestEmail()
             .build()
         googleSignInClient = GoogleSignIn.getClient(this, gso)
 
-        // 5. Kiểm tra và yêu cầu quyền hệ thống
         requestRequiredPermissions()
 
-        // 6. Gán sự kiện click cho các chức năng
-        findViewById<Button>(R.id.btnBuyPremiumLock).setOnClickListener { launchBillingFlow() }
-        // findViewById<Button>(R.id.btnMenuBuyPremium)?.setOnClickListener { launchBillingFlow() }
-        
         btnOpenSettings.setOnClickListener { showOneUiSettingsSheet() }
         btnResync.setOnClickListener { 
             val limit = SyncPrefs.getSmsLimit(this)
@@ -133,137 +97,7 @@ class MainActivity : AppCompatActivity() {
         }
         btnRefresh.setOnClickListener { manualRefreshFromCloud() }
 
-        // 7. Đồng bộ trạng thái giao diện UI sau cùng
         applySyncModeAndUpdateUI()
-    }
-
-    private fun checkLicenseAndTrialStatus() {
-        val sharedPref = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        val isPurchased = sharedPref.getBoolean("is_premium", false)
-        
-        if (isPurchased) {
-            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
-            return
-        }
-
-        var firstLaunchTime = sharedPref.getLong("first_launch_time", 0L)
-        if (firstLaunchTime == 0L) {
-            firstLaunchTime = System.currentTimeMillis()
-            sharedPref.edit().putLong("first_launch_time", firstLaunchTime).apply()
-        }
-
-        val fiveDaysInMs = 5L * 24 * 60 * 60 * 1000
-        val currentTime = System.currentTimeMillis()
-
-        if (currentTime - firstLaunchTime > fiveDaysInMs) {
-            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.VISIBLE
-        } else {
-            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
-        }
-    }
-
-    private fun setupBillingClient() {
-        billingClient = BillingClient.newBuilder(this)
-            .setListener { billingResult, purchases ->
-                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
-                    for (purchase in purchases) {
-                        handlePurchase(purchase)
-                    }
-                }
-            }
-            .enablePendingPurchases()
-            .build()
-
-        billingClient.startConnection(object : BillingClientStateListener {
-            override fun onBillingSetupFinished(billingResult: BillingResult) {
-                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                    queryPurchasesOnLaunch()
-                }
-            }
-            override fun onBillingServiceDisconnected() {}
-        })
-    }
-
-    private fun launchBillingFlow() {
-        val productList = listOf(
-            QueryProductDetailsParams.Product.newBuilder()
-                .setProductId(premiumProductId)
-                .setProductType(BillingClient.ProductType.INAPP)
-                .build()
-        )
-        val params = QueryProductDetailsParams.newBuilder().setProductList(productList).build()
-
-        billingClient.queryProductDetailsAsync(params, object : ProductDetailsResponseListener {
-            override fun onProductDetailsReceived(billingResult: BillingResult, productDetailsList: MutableList<ProductDetails>) {
-                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && productDetailsList.isNotEmpty()) {
-                    val productDetails = productDetailsList[0]
-                    val billingFlowParams = BillingFlowParams.newBuilder()
-                        .setProductDetailsParamsList(listOf(
-                            BillingFlowParams.ProductDetailsParams.newBuilder()
-                                .setProductDetails(productDetails)
-                                .build()
-                        ))
-                        .build()
-                    billingClient.launchBillingFlow(this@MainActivity, billingFlowParams)
-                } else {
-                    runOnUiThread { Toast.makeText(this@MainActivity, "Không thể kết nối sản phẩm từ CH Play", Toast.LENGTH_SHORT).show() }
-                }
-            }
-        })
-    }
-
-
-
-    private fun handlePurchase(purchase: Purchase) {
-        if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-            if (!purchase.isAcknowledged) {
-                val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
-                    .setPurchaseToken(purchase.purchaseToken)
-                    .build()
-                billingClient.acknowledgePurchase(acknowledgePurchaseParams, object : AcknowledgePurchaseResponseListener {
-                    override fun onAcknowledgePurchaseResponse(billingResult: BillingResult) {
-                        if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                            savePremiumStatus(true)
-                        }
-                    }
-                })
-            } else {
-                savePremiumStatus(true)
-            }
-        }
-    }
-
-    private fun queryPurchasesOnLaunch() {
-        billingClient.queryPurchasesAsync(
-            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build(),
-            object : PurchasesResponseListener {
-                override fun onQueryPurchasesResponse(billingResult: BillingResult, purchaseList: MutableList<Purchase>) {
-                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchaseList != null) {
-                        // Thử nghiệm lấy qua cả .products (v5+) hoặc hỗ trợ .skus (v4) thông qua vòng lặp an toàn
-                        val hasPremium = purchaseList.any { purchase ->
-                            val productsList = try { purchase.products } catch (e: NoSuchMethodError) { purchase.skus }
-                            productsList.contains(premiumProductId) && purchase.purchaseState == Purchase.PurchaseState.PURCHASED
-                        }
-                        savePremiumStatus(hasPremium)
-                    } else {
-                        savePremiumStatus(false)
-                    }
-                }
-            }
-        )
-    }
-
-
-
-    private fun savePremiumStatus(isPremium: Boolean) {
-        val sharedPref = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        sharedPref.edit().putBoolean("is_premium", isPremium).apply()
-        runOnUiThread {
-            if (isPremium) {
-                findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
-                Toast.makeText(this, "Kích hoạt bản quyền thành công!", Toast.LENGTH_LONG).show()
-            }
-        }
     }
 
     private fun showOneUiSettingsSheet() {
@@ -314,6 +148,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, modeMsg, Toast.LENGTH_SHORT).show()
         }
 
+        // Cấu hình Spinner chọn giới hạn tin nhắn (10, 20, 30, 50)
         val limitOptions = arrayOf("10 tin nhắn gần nhất", "20 tin nhắn gần nhất", "30 tin nhắn gần nhất", "50 tin nhắn gần nhất")
         val limitValues = intArrayOf(10, 20, 30, 50)
         
@@ -500,6 +335,24 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "Lỗi kết nối Server!", Toast.LENGTH_SHORT).show()
                 }
             }
+    }
+
+    private val signInLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)!!
+            val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+            auth.signInWithCredential(credential).addOnCompleteListener(this) { authTask ->
+                if (authTask.isSuccessful) {
+                    Toast.makeText(this, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
+                    applySyncModeAndUpdateUI()
+                }
+            }
+        } catch (e: ApiException) {
+            Toast.makeText(this, "Lỗi Google Sign-In: Mã ${e.statusCode}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun requestRequiredPermissions() {
