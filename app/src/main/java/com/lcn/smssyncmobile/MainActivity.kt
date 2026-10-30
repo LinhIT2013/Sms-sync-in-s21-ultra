@@ -1,32 +1,52 @@
 package com.lcn.smssyncmobile
 
 import android.Manifest
-import android.content.*
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
-import android.os.*
+import android.os.Build
+import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.provider.Telephony
 import android.view.View
-import android.widget.*
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.android.billingclient.api.*
-import com.google.android.gms.auth.api.signin.*
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
-import com.google.firebase.auth.*
-import com.google.firebase.firestore.*
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.Source
+import android.widget.RelativeLayout
+import com.android.billingclient.api.*
+
 class MainActivity : AppCompatActivity() {
     private lateinit var auth: FirebaseAuth
     private lateinit var db: FirebaseFirestore
     private lateinit var googleSignInClient: GoogleSignInClient
+
     private lateinit var tvSubtitle: TextView
     private lateinit var tvSyncModeStatus: TextView
     private lateinit var statusDot: View
@@ -36,17 +56,137 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvEmptyState: TextView
     private lateinit var smsAdapter: SmsAdapter
     private lateinit var billingClient: BillingClient
-    private val premiumProductId = "app_premium_license"
+    private val premiumProductId = "smssyncmobile1" // ID sản phẩm bạn sẽ tạo trên CH Play Console
+    
     private var firestoreListener: ListenerRegistration? = null
-    private val WEB_CLIENT_ID = "://googleusercontent.com"
+    private val WEB_CLIENT_ID = "419963533121-r7cohbrnuhnp8h732k5s3k3bc21rq0n5.apps.googleusercontent.com"
+	
+
+    private fun checkLicenseAndTrialStatus() {
+        val sharedPref = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val isPurchased = sharedPref.getBoolean("is_premium", false)
+        
+        if (isPurchased) {
+            // Đã mua bản quyền -> Mở ứng dụng bình thường
+            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
+            return
+        }
+
+        // Kiểm tra ngày đầu tiên mở ứng dụng
+        var firstLaunchTime = sharedPref.getLong("first_launch_time", 0L)
+        if (firstLaunchTime == 0L) {
+            firstLaunchTime = System.currentTimeMillis()
+            sharedPref.edit().putLong("first_launch_time", firstLaunchTime).apply()
+        }
+
+        // Tính số ngày đã trôi qua (5 ngày = 5 * 24 * 60 * 60 * 1000 ms)
+        val fiveDaysInMs = 5L * 24 * 60 * 60 * 1000
+        val currentTime = System.currentTimeMillis()
+
+        if (currentTime - firstLaunchTime > fiveDaysInMs) {
+            // Hết hạn 5 ngày -> Khóa toàn bộ màn hình
+            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.VISIBLE
+        } else {
+            // Còn trong hạn dùng thử
+            findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
+        }
+    }
+
+    private fun setupBillingClient() {
+        billingClient = BillingClient.newBuilder(this)
+            .setListener { billingResult, purchases ->
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
+                    for (purchase in purchases) {
+                        handlePurchase(purchase)
+                    }
+                }
+            }
+            .enablePendingPurchases()
+            .build()
+
+        billingClient.startConnection(object : BillingClientStateListener {
+            override fun onBillingSetupFinished(billingResult: BillingResult) {
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                    // Kết nối cổng thanh toán CH Play thành công
+                    queryPurchasesOnLaunch()
+                }
+            }
+            override fun onBillingServiceDisconnected() {
+                // Kết nối lại nếu bị ngắt giữa chừng
+            }
+        })
+    }
+
+    private fun launchBillingFlow() {
+        val productList = listOf(
+            QueryProductDetailsParams.Product.newBuilder()
+                .setProductId(premiumProductId)
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build()
+        )
+        val params = QueryProductDetailsParams.newBuilder().setProductList(productList).build()
+
+        billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && productDetailsList.isNotEmpty()) {
+                val productDetails = productDetailsList[0]
+                val billingFlowParams = BillingFlowParams.newBuilder()
+                    .setProductDetailsParamsList(listOf(
+                        BillingFlowParams.ProductDetailsParams.newBuilder()
+                            .setProductDetails(productDetails)
+                            .build()
+                    ))
+                    .build()
+                billingClient.launchBillingFlow(this, billingFlowParams)
+            } else {
+                runOnUiThread { Toast.makeText(this, "Không thể kết nối sản phẩm từ CH Play", Toast.LENGTH_SHORT).show() }
+            }
+        }
+    }
+
+    private fun handlePurchase(purchase: Purchase) {
+        if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
+            // Xác thực giao dịch nếu chưa được xác thực (Bắt buộc theo quy định Google)
+            if (!purchase.isAcknowledged) {
+                val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
+                    .setPurchaseToken(purchase.purchaseToken)
+                    .build()
+                billingClient.acknowledgePurchase(acknowledgePurchaseParams) { billingResult ->
+                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                        savePremiumStatus(true)
+                    }
+                }
+            } else {
+                savePremiumStatus(true)
+            }
+        }
+    }
+
+    private fun queryPurchasesOnLaunch() {
+        // Kiểm tra xem lịch sử người dùng này đã từng mua sản phẩm này chưa (Ví dụ khi họ cài lại ứng dụng)
+        billingClient.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()
+        ) { billingResult, purchaseList ->
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                val hasPremium = purchaseList.any { it.products.contains(premiumProductId) && it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                savePremiumStatus(hasPremium)
+            }
+        }
+    }
+
+    private fun savePremiumStatus(isPremium: Boolean) {
+        val sharedPref = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        sharedPref.edit().putBoolean("is_premium", isPremium).apply()
+        runOnUiThread {
+            if (isPremium) {
+                findViewById<RelativeLayout>(R.id.layoutLockScreen).visibility = View.GONE
+                Toast.makeText(this, "Kích hoạt bản quyền thành công!", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
-        checkLicenseAndTrialStatus()
-        setupBillingClient()
-        findViewById<Button>(R.id.btnBuyPremiumLock)?.setOnClickListener { launchBillingFlow() }
 
         tvSubtitle = findViewById(R.id.tvSubtitle)
         tvSyncModeStatus = findViewById(R.id.tvSyncModeStatus)
@@ -55,11 +195,20 @@ class MainActivity : AppCompatActivity() {
         btnRefresh = findViewById(R.id.btnRefresh)
         rvSmsList = findViewById(R.id.rvSmsList)
         tvEmptyState = findViewById(R.id.tvEmptyState)
+        val btnOpenSettings = findViewById<Button>(R.id.btnOpenSettings)
+        // 1. Kiểm tra thời gian dùng thử và trạng thái bản quyền trước
+        checkLicenseAndTrialStatus()
 
+        // 2. Khởi tạo Google Play Billing Client
+        setupBillingClient()
+
+        // 3. Đăng ký sự kiện nút bấm mua hàng bên ngoài Menu hoặc trên Màn hình khóa
+        findViewById<Button>(R.id.btnBuyPremiumLock).setOnClickListener { launchBillingFlow() }
+        // findViewById<Button>(R.id.btnMenuBuyPremium)?.setOnClickListener { launchBillingFlow() }
         smsAdapter = SmsAdapter { smsBody ->
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("SMS", smsBody))
-            Toast.makeText(this, "Đã sao chép tin nhắn!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Đã sao chép nội dung tin nhắn!", Toast.LENGTH_SHORT).show()
         }
         rvSmsList.layoutManager = LinearLayoutManager(this)
         rvSmsList.adapter = smsAdapter
@@ -67,165 +216,119 @@ class MainActivity : AppCompatActivity() {
         auth = FirebaseAuth.getInstance()
         db = FirebaseFirestore.getInstance()
 
-        googleSignInClient = GoogleSignIn.getClient(this, GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(WEB_CLIENT_ID).requestEmail().build())
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(WEB_CLIENT_ID)
+            .requestEmail()
+            .build()
+        googleSignInClient = GoogleSignIn.getClient(this, gso)
 
         requestRequiredPermissions()
-        findViewById<Button>(R.id.btnOpenSettings)?.setOnClickListener { showOneUiSettingsSheet() }
-        btnResync.setOnClickListener { resyncLocalSmsToCloud(SyncPrefs.getSmsLimit(this)) }
+
+        btnOpenSettings.setOnClickListener { showOneUiSettingsSheet() }
+        btnResync.setOnClickListener { 
+            val limit = SyncPrefs.getSmsLimit(this)
+            resyncLocalSmsToCloud(maxCount = limit)
+        }
         btnRefresh.setOnClickListener { manualRefreshFromCloud() }
 
         applySyncModeAndUpdateUI()
     }
-    private fun checkLicenseAndTrialStatus() {
-        val sharedPref = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        if (sharedPref.getBoolean("is_premium", false)) {
-            findViewById<RelativeLayout>(R.id.layoutLockScreen)?.visibility = View.GONE
-            return
-        }
-        var firstLaunch = sharedPref.getLong("first_launch_time", 0L)
-        if (firstLaunch == 0L) {
-            firstLaunch = System.currentTimeMillis()
-            sharedPref.edit().putLong("first_launch_time", firstLaunch).apply()
-        }
-        if (System.currentTimeMillis() - firstLaunch > 5L * 24 * 60 * 60 * 1000) {
-            findViewById<RelativeLayout>(R.id.layoutLockScreen)?.visibility = View.VISIBLE
-        } else {
-            findViewById<RelativeLayout>(R.id.layoutLockScreen)?.visibility = View.GONE
-        }
-    }
 
-    private fun setupBillingClient() {
-        billingClient = BillingClient.newBuilder(this).setListener { res, purchases ->
-            if (res.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
-                purchases.forEach { handlePurchase(it) }
-            }
-        }.enablePendingPurchases().build()
-
-        billingClient.startConnection(object : BillingClientStateListener {
-            override fun onBillingSetupFinished(res: BillingResult) {
-                if (res.responseCode == BillingClient.BillingResponseCode.OK) queryPurchasesOnLaunch()
-            }
-            override fun onBillingServiceDisconnected() {}
-        })
-    }
-    private fun launchBillingFlow() {
-        val params = QueryProductDetailsParams.newBuilder().setProductList(listOf(
-            QueryProductDetailsParams.Product.newBuilder().setProductId(premiumProductId).setProductType(BillingClient.ProductType.INAPP).build()
-        )).build()
-
-        billingClient.queryProductDetailsAsync(params) { res, list ->
-            if (res.responseCode == BillingClient.BillingResponseCode.OK && list.isNotEmpty()) {
-                val productDetails = list[0] // SỬA LỖI 1: Lấy phần tử đầu tiên của danh sách thay vì truyền cả một List
-                val flowParams = BillingFlowParams.newBuilder()
-                    .setProductDetailsParamsList(listOf(BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(productDetails).build())).build()
-                billingClient.launchBillingFlow(this, flowParams)
-            } else {
-                runOnUiThread { Toast.makeText(this, "Lỗi kết nối CH Play", Toast.LENGTH_SHORT).show() }
-            }
-        }
-    }
-
-    private fun handlePurchase(purchase: Purchase) {
-        if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-            if (!purchase.isAcknowledged) {
-                billingClient.acknowledgePurchase(AcknowledgePurchaseParams.newBuilder().setPurchaseToken(purchase.purchaseToken).build()) { res ->
-                    if (res.responseCode == BillingClient.BillingResponseCode.OK) savePremiumStatus(true)
-                }
-            } else { savePremiumStatus(true) }
-        }
-    }
-
-    private fun queryPurchasesOnLaunch() {
-        billingClient.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()) { res, list ->
-            if (res.responseCode == BillingClient.BillingResponseCode.OK) {
-                savePremiumStatus(list.any { it.products.contains(premiumProductId) && it.purchaseState == Purchase.PurchaseState.PURCHASED })
-            }
-        }
-    }
-
-    private fun savePremiumStatus(isPremium: Boolean) {
-        getSharedPreferences("AppPrefs", Context.MODE_PRIVATE).edit().putBoolean("is_premium", isPremium).apply()
-        runOnUiThread {
-            if (isPremium) {
-                findViewById<RelativeLayout>(R.id.layoutLockScreen)?.visibility = View.GONE
-                Toast.makeText(this, "Kích hoạt bản quyền thành công!", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
     private fun showOneUiSettingsSheet() {
         val dialog = BottomSheetDialog(this)
         val view = layoutInflater.inflate(R.layout.dialog_oneui_settings, null)
         dialog.setContentView(view)
 
-        val tvEmail = view.findViewById<TextView>(R.id.tvSheetAccountEmail)
-        val tvUid = view.findViewById<TextView>(R.id.tvSheetAccountUid)
-        val btnAuth = view.findViewById<MaterialButton>(R.id.btnSheetGoogleAuth)
-        val switchSync = view.findViewById<SwitchMaterial>(R.id.switchAutoSync)
-        val spinnerLimit = view.findViewById<Spinner>(R.id.spinnerSmsLimit)
-        
-        // SỬA LỖI 2: Thêm dấu hỏi chấm (?.) đề phòng layout XML của bạn thiếu nút này không gây lỗi Unresolved reference
-        view.findViewById<Button>(R.id.btnMenuBuyPremium)?.setOnClickListener { launchBillingFlow() }
+        val tvAccountEmail = view.findViewById<TextView>(R.id.tvSheetAccountEmail)
+        val tvAccountUid = view.findViewById<TextView>(R.id.tvSheetAccountUid)
+        val btnGoogleAuth = view.findViewById<MaterialButton>(R.id.btnSheetGoogleAuth)
+        val switchAutoSync = view.findViewById<SwitchMaterial>(R.id.switchAutoSync)
+        val spinnerSmsLimit = view.findViewById<Spinner>(R.id.spinnerSmsLimit)
 
         val user = auth.currentUser
         if (user != null) {
-            tvEmail.text = user.email
-            tvUid.text = "UID: ${user.uid.take(10)}..."
-            btnAuth.text = "Đăng xuất"
-            btnAuth.setBackgroundColor(Color.parseColor("#FF3B30"))
+            tvAccountEmail.text = user.email
+            tvAccountUid.text = "Mã đồng bộ (UID): ${user.uid.take(10)}..."
+            btnGoogleAuth.text = "Đăng xuất / Đổi tài khoản"
+            btnGoogleAuth.setBackgroundColor(Color.parseColor("#FF3B30"))
         } else {
-            tvEmail.text = "Chưa đăng nhập"
-            tvUid.text = "Đăng nhập Gmail để đồng bộ"
-            btnAuth.text = "Đăng nhập với Google"
-            btnAuth.setBackgroundColor(Color.parseColor("#0381FE"))
+            tvAccountEmail.text = "Chưa đăng nhập"
+            tvAccountUid.text = "Đăng nhập cùng 1 Gmail trên các máy để đồng bộ"
+            btnGoogleAuth.text = "Đăng nhập với Google"
+            btnGoogleAuth.setBackgroundColor(Color.parseColor("#0381FE"))
         }
 
-        btnAuth.setOnClickListener {
-            dialog.dismiss()
+        btnGoogleAuth.setOnClickListener {
             if (auth.currentUser != null) {
                 auth.signOut()
                 googleSignInClient.signOut().addOnCompleteListener {
                     firestoreListener?.remove()
                     smsAdapter.submitList(emptyList())
                     applySyncModeAndUpdateUI()
+                    dialog.dismiss()
+                    Toast.makeText(this, "Đã đăng xuất tài khoản", Toast.LENGTH_SHORT).show()
                 }
-            } else { signInLauncher.launch(googleSignInClient.signInIntent) }
+            } else {
+                dialog.dismiss()
+                signInLauncher.launch(googleSignInClient.signInIntent)
+            }
         }
 
-        switchSync.isChecked = SyncPrefs.isAutoSync(this)
-        switchSync.setOnCheckedChangeListener { _, isChecked ->
+        switchAutoSync.isChecked = SyncPrefs.isAutoSync(this)
+        switchAutoSync.setOnCheckedChangeListener { _, isChecked ->
             SyncPrefs.setAutoSync(this, isChecked)
             applySyncModeAndUpdateUI()
+            val modeMsg = if (isChecked) "Đã bật Tự động đồng bộ" else "Đã chuyển sang Đồng bộ thủ công"
+            Toast.makeText(this, modeMsg, Toast.LENGTH_SHORT).show()
         }
 
-        val limits = intArrayOf(10, 20, 30, 50)
-        spinnerLimit.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, arrayOf("10 tin", "20 tin", "30 tin", "50 tin"))
-        spinnerLimit.setSelection(limits.indexOf(SyncPrefs.getSmsLimit(this)).takeIf { it >= 0 } ?: 3)
-        spinnerLimit.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>, v: View?, pos: Int, id: Long) {
-                SyncPrefs.setSmsLimit(this@MainActivity, limits[pos])
-                applySyncModeAndUpdateUI()
+        // Cấu hình Spinner chọn giới hạn tin nhắn (10, 20, 30, 50)
+        val limitOptions = arrayOf("10 tin nhắn gần nhất", "20 tin nhắn gần nhất", "30 tin nhắn gần nhất", "50 tin nhắn gần nhất")
+        val limitValues = intArrayOf(10, 20, 30, 50)
+        
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, limitOptions)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerSmsLimit.adapter = adapter
+
+        val currentLimit = SyncPrefs.getSmsLimit(this)
+        val selectedIndex = limitValues.indexOf(currentLimit).takeIf { it >= 0 } ?: 3
+        spinnerSmsLimit.setSelection(selectedIndex)
+
+        spinnerSmsLimit.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
+                val chosenLimit = limitValues[position]
+                if (chosenLimit != SyncPrefs.getSmsLimit(this@MainActivity)) {
+                    SyncPrefs.setSmsLimit(this@MainActivity, chosenLimit)
+                    applySyncModeAndUpdateUI()
+                    Toast.makeText(this@MainActivity, "Đã chọn giới hạn: $chosenLimit tin", Toast.LENGTH_SHORT).show()
+                }
             }
-            override fun onNothingSelected(p: AdapterView<*>) {}
+            override fun onNothingSelected(parent: AdapterView<*>) {}
         }
+
         dialog.show()
     }
+
     private fun applySyncModeAndUpdateUI() {
         val user = auth.currentUser
+        val isAuto = SyncPrefs.isAutoSync(this)
+
         if (user == null) {
-            tvSubtitle.text = "Chưa kết nối tài khoản"
+            tvSubtitle.text = "Chưa kết nối tài khoản • Bấm Cài đặt để đăng nhập"
             tvSyncModeStatus.text = "Trạng thái: Ngắt kết nối"
             statusDot.setBackgroundResource(android.R.drawable.presence_offline)
             tvEmptyState.visibility = View.VISIBLE
             return
         }
+
         tvSubtitle.text = "Tài khoản: ${user.email}"
-        if (SyncPrefs.isAutoSync(this)) {
-            tvSyncModeStatus.text = "Chế độ: Tự động (Real-time)"
+
+        if (isAuto) {
+            tvSyncModeStatus.text = "Chế độ: Tự động đồng bộ (Real-time)"
             statusDot.setBackgroundResource(android.R.drawable.presence_online)
             startRealtimeListener(user.uid)
         } else {
-            tvSyncModeStatus.text = "Chế độ: Thủ công"
+            tvSyncModeStatus.text = "Chế độ: Đồng bộ thủ công"
             statusDot.setBackgroundResource(android.R.drawable.presence_away)
             firestoreListener?.remove()
             firestoreListener = null
@@ -235,73 +338,174 @@ class MainActivity : AppCompatActivity() {
 
     private fun startRealtimeListener(uid: String) {
         firestoreListener?.remove()
-        firestoreListener = db.collection("users").document(uid).collection("sms_list")
-            .orderBy("timestamp", Query.Direction.DESCENDING).limit(SyncPrefs.getSmsLimit(this).toLong())
-            .addSnapshotListener { snaps, err -> if (err == null && snaps != null) renderSmsList(snaps.documents) }
+        val limit = SyncPrefs.getSmsLimit(this).toLong()
+
+        firestoreListener = db.collection("users")
+            .document(uid)
+            .collection("sms_list")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(limit)
+            .addSnapshotListener { snapshots, error ->
+                if (error != null || snapshots == null) return@addSnapshotListener
+                renderSmsList(snapshots.documents)
+            }
     }
 
     private fun loadOnceFromCacheOrServer(uid: String, source: Source) {
-        db.collection("users").document(uid).collection("sms_list")
-            .orderBy("timestamp", Query.Direction.DESCENDING).limit(SyncPrefs.getSmsLimit(this).toLong())
-            .get(source).addOnSuccessListener { renderSmsList(it.documents) }
+        val limit = SyncPrefs.getSmsLimit(this).toLong()
+
+        db.collection("users")
+            .document(uid)
+            .collection("sms_list")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(limit)
+            .get(source)
+            .addOnSuccessListener { result ->
+                renderSmsList(result.documents)
+            }
     }
 
-    private fun renderSmsList(docs: List<DocumentSnapshot>) {
-        smsAdapter.submitList(docs)
-        tvEmptyState.visibility = if (docs.isEmpty()) View.VISIBLE else View.GONE
+    private fun renderSmsList(documents: List<DocumentSnapshot>) {
+        smsAdapter.submitList(documents)
+        tvEmptyState.visibility = if (documents.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun resyncLocalSmsToCloud(maxCount: Int) {
-        val user = auth.currentUser ?: return
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) return
+        val user = auth.currentUser
+        if (user == null) {
+            Toast.makeText(this, "Hãy mở Cài đặt và đăng nhập Google trước!", Toast.LENGTH_SHORT).show()
+            showOneUiSettingsSheet()
+            return
+        }
+
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            requestRequiredPermissions()
+            return
+        }
+
         btnResync.isEnabled = false
-        val cursor = contentResolver.query(Telephony.Sms.Inbox.CONTENT_URI, arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE), null, null, "${Telephony.Sms.DATE} DESC LIMIT $maxCount")
-        if (cursor == null || !cursor.moveToFirst()) { cursor?.close(); btnResync.isEnabled = true; return }
+        btnResync.text = "⏳ Đang đẩy..."
+
+        val cursor = contentResolver.query(
+            Telephony.Sms.Inbox.CONTENT_URI,
+            arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+            null, null,
+            "${Telephony.Sms.DATE} DESC LIMIT $maxCount"
+        )
+
+        if (cursor == null || !cursor.moveToFirst()) {
+            cursor?.close()
+            btnResync.isEnabled = true
+            btnResync.text = "⬆️ Đồng bộ lại"
+            Toast.makeText(this, "Hộp thư đến trống!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val batch = db.batch()
         val colRef = db.collection("users").document(user.uid).collection("sms_list")
+        val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
+        var count = 0
+
+        val addrIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+        val bodyIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
+        val dateIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
+
         do {
-            val time = cursor.getLong(cursor.getColumnIndexOrThrow(Telephony.Sms.DATE))
-            val sender = cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)) ?: "Unknown"
-            // SỬA LỖI 3: Khai báo rõ kiểu dữ liệu hashMapOf<String, Any>() để tránh lỗi ép kiểu Serializable
-            val smsData = hashMapOf<String, Any>(
+            val sender = cursor.getString(addrIdx) ?: "Unknown"
+            val body = cursor.getString(bodyIdx) ?: ""
+            val timestamp = cursor.getLong(dateIdx)
+            val docId = "${timestamp}_${sender.hashCode()}"
+
+            val smsData = hashMapOf(
                 "sender" to sender,
-                "body" to (cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""),
-                "timestamp" to time,
-                "deviceModel" to "${Build.MANUFACTURER} ${Build.MODEL}",
+                "body" to body,
+                "timestamp" to timestamp,
+                "deviceModel" to deviceName,
                 "syncedAt" to System.currentTimeMillis()
             )
-            batch.set(colRef.document("${time}_${sender.hashCode()}"), smsData)
+            batch.set(colRef.document(docId), smsData)
+            count++
         } while (cursor.moveToNext())
         cursor.close()
-        batch.commit().addOnCompleteListener { btnResync.isEnabled = true; if (it.isSuccessful && !SyncPrefs.isAutoSync(this)) manualRefreshFromCloud() }
-    }
 
-    private fun manualRefreshFromCloud() {
-        val user = auth.currentUser ?: return
-        btnRefresh.isEnabled = false
-        db.collection("users").document(user.uid).collection("sms_list")
-            .orderBy("timestamp", Query.Direction.DESCENDING).limit(SyncPrefs.getSmsLimit(this).toLong())
-            .get(Source.SERVER).addOnCompleteListener { btnRefresh.isEnabled = true; if (it.isSuccessful && it.result != null) renderSmsList(it.result.documents) }
-    }
-
-    private val signInLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-        try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(res.data).getResult(ApiException::class.java)!!
-            auth.signInWithCredential(GoogleAuthProvider.getCredential(account.idToken, null)).addOnCompleteListener(this) { if (it.isSuccessful) applySyncModeAndUpdateUI() }
-        } catch (e: Exception) {}
-    }
-
-    private fun requestRequiredPermissions() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 101)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val pm = getSystemService(POWER_SERVICE) as PowerManager
-            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply { data = Uri.parse("package:$packageName") })
+        batch.commit().addOnCompleteListener { task ->
+            btnResync.isEnabled = true
+            btnResync.text = "⬆️ Đồng bộ lại"
+            if (task.isSuccessful) {
+                Toast.makeText(this, "Đã đồng bộ $count tin nhắn lên Cloud!", Toast.LENGTH_SHORT).show()
+                if (!SyncPrefs.isAutoSync(this)) manualRefreshFromCloud()
+            } else {
+                Toast.makeText(this, "Lỗi: ${task.exception?.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    override fun onDestroy() { super.onDestroy(); firestoreListener?.remove() }
+    private fun manualRefreshFromCloud() {
+        val user = auth.currentUser
+        if (user == null) {
+            Toast.makeText(this, "Hãy mở Cài đặt và đăng nhập Google trước!", Toast.LENGTH_SHORT).show()
+            showOneUiSettingsSheet()
+            return
+        }
+
+        btnRefresh.isEnabled = false
+        btnRefresh.text = "⏳ Đang tải..."
+
+        val limit = SyncPrefs.getSmsLimit(this).toLong()
+
+        db.collection("users")
+            .document(user.uid)
+            .collection("sms_list")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(limit)
+            .get(Source.SERVER)
+            .addOnCompleteListener { task ->
+                btnRefresh.isEnabled = true
+                btnRefresh.text = "🔄 Làm mới"
+                if (task.isSuccessful && task.result != null) {
+                    renderSmsList(task.result.documents)
+                    Toast.makeText(this, "Đã cập nhật danh sách mới nhất!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Lỗi kết nối Server!", Toast.LENGTH_SHORT).show()
+                }
+            }
+    }
+
+    private val signInLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)!!
+            val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+            auth.signInWithCredential(credential).addOnCompleteListener(this) { authTask ->
+                if (authTask.isSuccessful) {
+                    Toast.makeText(this, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
+                    applySyncModeAndUpdateUI()
+                }
+            }
+        } catch (e: ApiException) {
+            Toast.makeText(this, "Lỗi Google Sign-In: Mã ${e.statusCode}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun requestRequiredPermissions() {
+        val permissions = arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, permissions, 101)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                })
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        firestoreListener?.remove()
+    }
 }
