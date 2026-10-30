@@ -547,7 +547,7 @@ class MainActivity : AppCompatActivity(), PurchasesUpdatedListener {
                 }
             }
         } catch (e: ApiException) {
-            Toast.makeText(this, "Lỗi Google Play Billing kết nối thất bại hoặc cấu hình sai.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Lỗi đăng nhập Google: Mã lỗi ${e.statusCode}", Toast.LENGTH_LONG).show()
         }
     }
 
