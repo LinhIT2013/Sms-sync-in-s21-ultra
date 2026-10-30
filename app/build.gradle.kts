@@ -37,7 +37,27 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+    signingConfigs {
+        create("release") {
+            // Đọc biến môi trường từ hệ thống giống như cấu hình trong file .yml
+            val keystoreFile = file("lcn_release.jks")
+                storeFile = keystoreFile
+                storePassword = "123456"
+                keyAlias = "lcn_key"
+                keyPassword = "123456"
+        }
+    }
 
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
