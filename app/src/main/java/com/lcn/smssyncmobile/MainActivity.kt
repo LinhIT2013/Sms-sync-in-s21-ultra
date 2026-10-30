@@ -195,7 +195,7 @@ class MainActivity : AppCompatActivity() {
 
         billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && productDetailsList.isNotEmpty()) {
-                val productDetails = productDetailsList
+                val productDetails = productDetailsList[0]
                 val billingFlowParams = BillingFlowParams.newBuilder()
                     .setProductDetailsParamsList(listOf(
                         BillingFlowParams.ProductDetailsParams.newBuilder()
