@@ -184,7 +184,7 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-       private fun launchBillingFlow() {
+    private fun launchBillingFlow() {
         val productList = listOf(
             QueryProductDetailsParams.Product.newBuilder()
                 .setProductId(premiumProductId)
@@ -193,22 +193,25 @@ class MainActivity : AppCompatActivity() {
         )
         val params = QueryProductDetailsParams.newBuilder().setProductList(productList).build()
 
-        billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
-            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && !productDetailsList.isNullOrEmpty()) {
-                val productDetails = productDetailsList[0]
-                val billingFlowParams = BillingFlowParams.newBuilder()
-                    .setProductDetailsParamsList(listOf(
-                        BillingFlowParams.ProductDetailsParams.newBuilder()
-                            .setProductDetails(productDetails)
-                            .build()
-                    ))
-                    .build()
-                billingClient.launchBillingFlow(this, billingFlowParams)
-            } else {
-                runOnUiThread { Toast.makeText(this, "Không thể kết nối sản phẩm từ CH Play", Toast.LENGTH_SHORT).show() }
+        billingClient.queryProductDetailsAsync(params, object : ProductDetailsResponseListener {
+            override fun onProductDetailsReceived(billingResult: BillingResult, productDetailsList: MutableList<ProductDetails>) {
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && productDetailsList.isNotEmpty()) {
+                    val productDetails = productDetailsList[0]
+                    val billingFlowParams = BillingFlowParams.newBuilder()
+                        .setProductDetailsParamsList(listOf(
+                            BillingFlowParams.ProductDetailsParams.newBuilder()
+                                .setProductDetails(productDetails)
+                                .build()
+                        ))
+                        .build()
+                    billingClient.launchBillingFlow(this@MainActivity, billingFlowParams)
+                } else {
+                    runOnUiThread { Toast.makeText(this@MainActivity, "Không thể kết nối sản phẩm từ CH Play", Toast.LENGTH_SHORT).show() }
+                }
             }
-        }
+        })
     }
+
 
 
     private fun handlePurchase(purchase: Purchase) {
@@ -217,30 +220,37 @@ class MainActivity : AppCompatActivity() {
                 val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
                     .setPurchaseToken(purchase.purchaseToken)
                     .build()
-                billingClient.acknowledgePurchase(acknowledgePurchaseParams) { billingResult ->
-                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                        savePremiumStatus(true)
+                billingClient.acknowledgePurchase(acknowledgePurchaseParams, object : AcknowledgePurchaseResponseListener {
+                    override fun onAcknowledgePurchaseResponse(billingResult: BillingResult) {
+                        if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                            savePremiumStatus(true)
+                        }
                     }
-                }
+                })
             } else {
                 savePremiumStatus(true)
             }
         }
     }
 
-	private fun queryPurchasesOnLaunch() {
+    private fun queryPurchasesOnLaunch() {
         billingClient.queryPurchasesAsync(
-            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()
-        ) { billingResult, purchaseList ->
-            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchaseList != null) {
-                val hasPremium = purchaseList.any { purchase ->
-                    purchase.products.contains(premiumProductId) && purchase.purchaseState == Purchase.PurchaseState.PURCHASED
+            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build(),
+            object : PurchasesResponseListener {
+                override fun onQueryPurchasesResponse(billingResult: BillingResult, purchaseList: MutableList<Purchase>) {
+                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchaseList != null) {
+                        // Thử nghiệm lấy qua cả .products (v5+) hoặc hỗ trợ .skus (v4) thông qua vòng lặp an toàn
+                        val hasPremium = purchaseList.any { purchase ->
+                            val productsList = try { purchase.products } catch (e: NoSuchMethodError) { purchase.skus }
+                            productsList.contains(premiumProductId) && purchase.purchaseState == Purchase.PurchaseState.PURCHASED
+                        }
+                        savePremiumStatus(hasPremium)
+                    } else {
+                        savePremiumStatus(false)
+                    }
                 }
-                savePremiumStatus(hasPremium)
-            } else {
-                savePremiumStatus(false)
             }
-        }
+        )
     }
 
 
