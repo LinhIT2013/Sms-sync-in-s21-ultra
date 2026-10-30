@@ -44,9 +44,8 @@ jobs:
           tag_name: ${{ env.VERSION }}
           name: "Đồng Bộ SMS APK - ${{ env.VERSION }}"
           body: |
-            🤖 **Bản dựng tự động (Automatic Build)**
-            - Phiên bản:  ${{ env.VERSION }}
-            - Ứng dụng đồng bộ SMS giao diện Samsung One UI.
+            🤖 **Bản dựng tự động (Automatic Build)*
+            - Ứng dụng đồng bộ SMS by LCN
             - Người dùng có thể bấm vào file `.apk` bên dưới để tải về cài đặt trực tiếp.
           files: app/build/outputs/apk/debug/*.apk
         env:
