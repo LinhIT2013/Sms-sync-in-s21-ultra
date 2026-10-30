@@ -14,11 +14,8 @@
         android:paddingTop="42dp"
         android:paddingEnd="24dp"
         android:paddingBottom="16dp">
-        <!-- Thêm thuộc tính xmlns:android và xmlns:app vào thẻ RelativeLayout dưới đây -->
         <RelativeLayout
             android:id="@+id/layoutLockScreen"
-            xmlns:android="http://android.com"
-            xmlns:app="http://android.com"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="#E6000000"
