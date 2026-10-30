@@ -25,6 +25,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.android.billingclient.api.*
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -40,11 +41,12 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), PurchasesUpdatedListener {
 
     private lateinit var auth: FirebaseAuth
     private lateinit var db: FirebaseFirestore
     private lateinit var googleSignInClient: GoogleSignInClient
+    private lateinit var billingClient: BillingClient
 
     private lateinit var tvSubtitle: TextView
     private lateinit var tvTrialStatus: TextView
@@ -58,6 +60,7 @@ class MainActivity : AppCompatActivity() {
 
     private var firestoreListener: ListenerRegistration? = null
     private val WEB_CLIENT_ID = "419963533121-r7cohbrnuhnp8h732k5s3k3bc21rq0n5.apps.googleusercontent.com"
+    private val PRODUCT_ID_PRO = "sms_sync_pro_lifetime"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,6 +75,13 @@ class MainActivity : AppCompatActivity() {
         rvSmsList = findViewById(R.id.rvSmsList)
         tvEmptyState = findViewById(R.id.tvEmptyState)
         val btnOpenSettings = findViewById<Button>(R.id.btnOpenSettings)
+
+        // Khởi tạo và kết nối Google Play Billing Client chuẩn
+        billingClient = BillingClient.newBuilder(this)
+            .setListener(this)
+            .enablePendingPurchases()
+            .build()
+        connectGooglePlayBilling()
 
         smsAdapter = SmsAdapter { smsBody ->
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -96,7 +106,7 @@ class MainActivity : AppCompatActivity() {
         
         btnResync.setOnClickListener { 
             if (SyncPrefs.isTrialExpired(this) && !SyncPrefs.isPro(this)) {
-                Toast.makeText(this, "Đã hết 90 ngày dùng thử! Vui lòng mua ứng dụng để tiếp tục đồng bộ.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Đã hết 90 ngày dùng thử! Vui lòng mua ứng dụng qua Google Play để tiếp tục.", Toast.LENGTH_LONG).show()
                 showOneUiSettingsSheet()
                 return@setOnClickListener
             }
@@ -106,7 +116,7 @@ class MainActivity : AppCompatActivity() {
         
         btnRefresh.setOnClickListener { 
             if (SyncPrefs.isTrialExpired(this) && !SyncPrefs.isPro(this)) {
-                Toast.makeText(this, "Đã hết 90 ngày dùng thử! Vui lòng mua ứng dụng để tiếp tục đồng bộ.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Đã hết 90 ngày dùng thử! Vui lòng mua ứng dụng qua Google Play để tiếp tục.", Toast.LENGTH_LONG).show()
                 showOneUiSettingsSheet()
                 return@setOnClickListener
             }
@@ -114,6 +124,103 @@ class MainActivity : AppCompatActivity() {
         }
 
         updateTrialAndSyncStatusUI()
+    }
+
+    private fun connectGooglePlayBilling() {
+        if (!billingClient.isReady) {
+            billingClient.startConnection(object : BillingClientStateListener {
+                override fun onBillingSetupFinished(billingResult: BillingResult) {
+                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                        checkExistingPurchases()
+                    }
+                }
+                override fun onBillingServiceDisconnected() {
+                    // Thử kết nối lại nếu Google Play Service ngắt
+                }
+            })
+        }
+    }
+
+    private fun checkExistingPurchases() {
+        val params = QueryPurchasesParams.newBuilder()
+            .setProductType(BillingClient.ProductType.INAPP)
+            .build()
+        billingClient.queryPurchasesAsync(params) { billingResult, purchases ->
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                var hasPro = false
+                for (purchase in purchases) {
+                    if (purchase.products.contains(PRODUCT_ID_PRO) && purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
+                        hasPro = true
+                        if (!purchase.isAcknowledged) {
+                            acknowledgePurchase(purchase)
+                        }
+                    }
+                }
+                if (hasPro != SyncPrefs.isPro(this)) {
+                    SyncPrefs.setPro(this, hasPro)
+                    runOnUiThread { updateTrialAndSyncStatusUI() }
+                }
+            }
+        }
+    }
+
+    private fun acknowledgePurchase(purchase: Purchase) {
+        val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
+            .setPurchaseToken(purchase.purchaseToken)
+            .build()
+        billingClient.acknowledgePurchase(acknowledgePurchaseParams) { _ -> }
+    }
+
+    override fun onPurchasesUpdated(billingResult: BillingResult, purchases: MutableList<Purchase>?) {
+        if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
+            for (purchase in purchases) {
+                if (purchase.products.contains(PRODUCT_ID_PRO) && purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
+                    SyncPrefs.setPro(this, true)
+                    acknowledgePurchase(purchase)
+                    Toast.makeText(this, "🎉 Mua ứng dụng thành công qua Google Play!", Toast.LENGTH_LONG).show()
+                    updateTrialAndSyncStatusUI()
+                }
+            }
+        } else if (billingResult.responseCode == BillingClient.BillingResponseCode.USER_CANCELED) {
+            Toast.makeText(this, "Người dùng đã hủy giao dịch.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Lỗi giao dịch Google Play: ${billingResult.debugMessage}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun launchPurchaseFlow() {
+        if (!billingClient.isReady) {
+            Toast.makeText(this, "Đang kết nối đến Google Play Store, vui lòng thử lại sau vài giây...", Toast.LENGTH_SHORT).show()
+            connectGooglePlayBilling()
+            return
+        }
+
+        val productList = listOf(
+            QueryProductDetailsParams.Product.newBuilder()
+                .setProductId(PRODUCT_ID_PRO)
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build()
+        )
+        val params = QueryProductDetailsParams.newBuilder().setProductList(productList).build()
+
+        billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
+            runOnUiThread {
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && !productDetailsList.isNullOrEmpty()) {
+                    val productDetails = productDetailsList[0]
+                    val productDetailsParamsList = listOf(
+                        BillingFlowParams.ProductDetailsParams.newBuilder()
+                            .setProductDetails(productDetails)
+                            .build()
+                    )
+                    val billingFlowParams = BillingFlowParams.newBuilder()
+                        .setProductDetailsParamsList(productDetailsParamsList)
+                        .build()
+                    billingClient.launchBillingFlow(this, billingFlowParams)
+                } else {
+                    Toast.makeText(this, "Không tìm thấy sản phẩm trên Google Play Console (Mã lỗi: ${billingResult.responseCode})", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun updateTrialAndSyncStatusUI() {
@@ -150,7 +257,6 @@ class MainActivity : AppCompatActivity() {
         val switchAutoSync = view.findViewById<SwitchMaterial>(R.id.switchAutoSync)
         val spinnerSmsLimit = view.findViewById<Spinner>(R.id.spinnerSmsLimit)
 
-        // Cập nhật trạng thái bản quyền trong BottomSheet
         val isPro = SyncPrefs.isPro(this)
         val isExpired = SyncPrefs.isTrialExpired(this)
         val remainingDays = SyncPrefs.getRemainingDays(this)
@@ -164,7 +270,7 @@ class MainActivity : AppCompatActivity() {
         } else if (isExpired) {
             tvLicenseStatus.text = "⛔ Hết hạn dùng thử 90 ngày"
             tvLicenseDesc.text = "Chức năng đồng bộ đã bị khóa. Vui lòng mua vĩnh viễn qua Google Play để mở khóa."
-            btnBuyPro.text = "🛒 Mua ngay qua Google Play ($)"
+            btnBuyPro.text = "🛒 Mua ngay qua Google Play"
             btnBuyPro.setBackgroundColor(Color.parseColor("#FF3B30"))
         } else {
             tvLicenseStatus.text = "⏳ Dùng thử: Còn lại $remainingDays ngày"
@@ -173,13 +279,10 @@ class MainActivity : AppCompatActivity() {
             btnBuyPro.setBackgroundColor(Color.parseColor("#34C759"))
         }
 
-        // Giả lập giao dịch mua qua Google Play Billing
         btnBuyPro.setOnClickListener {
-            // Sau này tích hợp Google Play Billing Library, ở đây bấm để mô phỏng mua thành công
-            SyncPrefs.setPro(this, true)
-            Toast.makeText(this, "🎉 Mua ứng dụng thành công qua Google Play!", Toast.LENGTH_LONG).show()
-            dialog.dismiss()
-            updateTrialAndSyncStatusUI()
+            if (!isPro) {
+                launchPurchaseFlow()
+            }
         }
 
         val user = auth.currentUser
@@ -211,7 +314,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Nếu hết hạn mà chưa mua thì khóa công tắc tự động đồng bộ
         if (isExpired && !isPro) {
             switchAutoSync.isChecked = false
             switchAutoSync.isEnabled = false
@@ -416,7 +518,7 @@ class MainActivity : AppCompatActivity() {
         db.collection("users")
             .document(user.uid)
             .collection("sms_list")
-            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .orderBy("timestamp", Query.Duration.DESCENDING)
             .limit(limit)
             .get(Source.SERVER)
             .addOnCompleteListener { task ->
@@ -445,7 +547,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } catch (e: ApiException) {
-            Toast.makeText(this, "Lỗi Google Sign-In: Mã ${e.statusCode}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Lỗi Google Play Billing kết nối thất bại hoặc cấu hình sai.", Toast.LENGTH_LONG).show()
         }
     }
 
