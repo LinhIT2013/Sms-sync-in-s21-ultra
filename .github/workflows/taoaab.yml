@@ -35,7 +35,7 @@ jobs:
 
       # Bước 5: Chạy lệnh build file AAB phiên bản Release
       - name: Build Release AAB
-        run: ./gradlew bundleRelease
+        run: sh gradlew bundleRelease
         env:
           MYAPP_RELEASE_STORE_FILE: release-key.jks
           MYAPP_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
