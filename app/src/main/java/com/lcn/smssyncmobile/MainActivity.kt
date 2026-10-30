@@ -379,5 +379,8 @@ private fun showOneUiSettingsSheet() {
             }
         }
     }
-override fun onDestroy() { super.onDestroy(); firestoreListener?.remove() }
+    override fun onDestroy() {
+        super.onDestroy()
+        firestoreListener?.remove()
+    }
 }
