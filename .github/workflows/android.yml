@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write # Cho phép Actions tự động tạo Release và đính kèm file
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -22,11 +22,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Ensure Gradle Wrapper exists
+      - name: Fix and Generate Gradle Wrapper
         run: |
-          if [ ! -f gradlew ]; then
-            gradle wrapper --gradle-version 8.5
-          fi
+          # Xóa các file wrapper cũ bị lỗi nếu có
+          rm -rf gradle/wrapper
+          
+          # Tự động tạo lại Gradle Wrapper sạch sẽ phiên bản 8.5
+          gradle wrapper --gradle-version 8.5
+          
           chmod +x gradlew
 
       - name: Build Debug APK
@@ -44,9 +47,9 @@ jobs:
           tag_name: ${{ env.VERSION }}
           name: "Đồng Bộ SMS APK - ${{ env.VERSION }}"
           body: |
-            🤖 **Bản dựng tự động (Automatic Build)*
-            - Ứng dụng đồng bộ SMS by LCN
-            - Người dùng có thể bấm vào file `.apk` bên dưới để tải về cài đặt trực tiếp.
+            🤖 **Bản dựng tự động (Automatic Build)**
+            - Ứng dụng đồng bộ SMS giao diện Samsung One UI.
+            - Bấm vào file `.apk` bên dưới để tải về cài đặt trực tiếp.
           files: app/build/outputs/apk/debug/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
