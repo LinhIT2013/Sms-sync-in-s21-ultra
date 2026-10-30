@@ -155,3 +155,50 @@
             android:visibility="gone" />
     </FrameLayout>
 </LinearLayout>
+<!-- Thêm thuộc tính xmlns:android và xmlns:app vào thẻ RelativeLayout dưới đây -->
+<RelativeLayout
+    android:id="@+id/layoutLockScreen"
+    xmlns:android="http://android.com"
+    xmlns:app="http://android.com"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#E6000000"
+    android:gravity="center"
+    android:visibility="gone"
+    android:clickable="true"
+    android:focusable="true">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🔒 Hết hạn dùng thử"
+            android:textColor="#FFFFFF"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Ứng dụng đã dùng hết 5 ngày miễn phí. Vui lòng mua bản quyền (60.000đ) để tiếp tục sử dụng dịch vụ."
+            android:textColor="#CCCCCC"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="24dp"/>
+
+        <Button
+            android:id="@+id/btnBuyPremiumLock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Mua Bản Quyền (60.000đ)"
+            app:backgroundTint="#FF4500"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+</RelativeLayout>
