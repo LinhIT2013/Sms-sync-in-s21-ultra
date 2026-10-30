@@ -47,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var googleSignInClient: GoogleSignInClient
 
     private lateinit var tvSubtitle: TextView
+    private lateinit var tvTrialStatus: TextView
     private lateinit var tvSyncModeStatus: TextView
     private lateinit var statusDot: View
     private lateinit var btnResync: MaterialButton
@@ -63,6 +64,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         tvSubtitle = findViewById(R.id.tvSubtitle)
+        tvTrialStatus = findViewById(R.id.tvTrialStatus)
         tvSyncModeStatus = findViewById(R.id.tvSyncModeStatus)
         statusDot = findViewById(R.id.statusDot)
         btnResync = findViewById(R.id.btnResync)
@@ -91,11 +93,44 @@ class MainActivity : AppCompatActivity() {
         requestRequiredPermissions()
 
         btnOpenSettings.setOnClickListener { showOneUiSettingsSheet() }
+        
         btnResync.setOnClickListener { 
+            if (SyncPrefs.isTrialExpired(this) && !SyncPrefs.isPro(this)) {
+                Toast.makeText(this, "Đã hết 90 ngày dùng thử! Vui lòng mua ứng dụng để tiếp tục đồng bộ.", Toast.LENGTH_LONG).show()
+                showOneUiSettingsSheet()
+                return@setOnClickListener
+            }
             val limit = SyncPrefs.getSmsLimit(this)
             resyncLocalSmsToCloud(maxCount = limit)
         }
-        btnRefresh.setOnClickListener { manualRefreshFromCloud() }
+        
+        btnRefresh.setOnClickListener { 
+            if (SyncPrefs.isTrialExpired(this) && !SyncPrefs.isPro(this)) {
+                Toast.makeText(this, "Đã hết 90 ngày dùng thử! Vui lòng mua ứng dụng để tiếp tục đồng bộ.", Toast.LENGTH_LONG).show()
+                showOneUiSettingsSheet()
+                return@setOnClickListener
+            }
+            manualRefreshFromCloud()
+        }
+
+        updateTrialAndSyncStatusUI()
+    }
+
+    private fun updateTrialAndSyncStatusUI() {
+        val isPro = SyncPrefs.isPro(this)
+        val isExpired = SyncPrefs.isTrialExpired(this)
+        val remainingDays = SyncPrefs.getRemainingDays(this)
+
+        if (isPro) {
+            tvTrialStatus.text = "👑 Trạng thái: Đã mua bản quyền Pro (Vĩnh viễn)"
+            tvTrialStatus.setTextColor(Color.parseColor("#34C759"))
+        } else if (isExpired) {
+            tvTrialStatus.text = "⛔ Trạng thái: Đã hết 90 ngày dùng thử (Đã khóa)"
+            tvTrialStatus.setTextColor(Color.parseColor("#FF3B30"))
+        } else {
+            tvTrialStatus.text = "⏳ Trạng thái dùng thử: Còn lại $remainingDays ngày"
+            tvTrialStatus.setTextColor(Color.parseColor("#FF9500"))
+        }
 
         applySyncModeAndUpdateUI()
     }
@@ -105,11 +140,47 @@ class MainActivity : AppCompatActivity() {
         val view = layoutInflater.inflate(R.layout.dialog_oneui_settings, null)
         dialog.setContentView(view)
 
+        val tvLicenseStatus = view.findViewById<TextView>(R.id.tvLicenseStatus)
+        val tvLicenseDesc = view.findViewById<TextView>(R.id.tvLicenseDesc)
+        val btnBuyPro = view.findViewById<MaterialButton>(R.id.btnBuyPro)
+
         val tvAccountEmail = view.findViewById<TextView>(R.id.tvSheetAccountEmail)
         val tvAccountUid = view.findViewById<TextView>(R.id.tvSheetAccountUid)
         val btnGoogleAuth = view.findViewById<MaterialButton>(R.id.btnSheetGoogleAuth)
         val switchAutoSync = view.findViewById<SwitchMaterial>(R.id.switchAutoSync)
         val spinnerSmsLimit = view.findViewById<Spinner>(R.id.spinnerSmsLimit)
+
+        // Cập nhật trạng thái bản quyền trong BottomSheet
+        val isPro = SyncPrefs.isPro(this)
+        val isExpired = SyncPrefs.isTrialExpired(this)
+        val remainingDays = SyncPrefs.getRemainingDays(this)
+
+        if (isPro) {
+            tvLicenseStatus.text = "👑 Đã sở hữu bản quyền Pro vĩnh viễn"
+            tvLicenseDesc.text = "Ứng dụng đã được kích hoạt đầy đủ tính năng."
+            btnBuyPro.text = "✅ Đã mua ứng dụng qua Google Play"
+            btnBuyPro.setBackgroundColor(Color.parseColor("#34C759"))
+            btnBuyPro.isEnabled = false
+        } else if (isExpired) {
+            tvLicenseStatus.text = "⛔ Hết hạn dùng thử 90 ngày"
+            tvLicenseDesc.text = "Chức năng đồng bộ đã bị khóa. Vui lòng mua vĩnh viễn qua Google Play để mở khóa."
+            btnBuyPro.text = "🛒 Mua ngay qua Google Play ($)"
+            btnBuyPro.setBackgroundColor(Color.parseColor("#FF3B30"))
+        } else {
+            tvLicenseStatus.text = "⏳ Dùng thử: Còn lại $remainingDays ngày"
+            tvLicenseDesc.text = "Mua ứng dụng 1 lần qua Google Play để sử dụng vĩnh viễn không giới hạn."
+            btnBuyPro.text = "🛒 Mua vĩnh viễn qua Google Play"
+            btnBuyPro.setBackgroundColor(Color.parseColor("#34C759"))
+        }
+
+        // Giả lập giao dịch mua qua Google Play Billing
+        btnBuyPro.setOnClickListener {
+            // Sau này tích hợp Google Play Billing Library, ở đây bấm để mô phỏng mua thành công
+            SyncPrefs.setPro(this, true)
+            Toast.makeText(this, "🎉 Mua ứng dụng thành công qua Google Play!", Toast.LENGTH_LONG).show()
+            dialog.dismiss()
+            updateTrialAndSyncStatusUI()
+        }
 
         val user = auth.currentUser
         if (user != null) {
@@ -130,7 +201,7 @@ class MainActivity : AppCompatActivity() {
                 googleSignInClient.signOut().addOnCompleteListener {
                     firestoreListener?.remove()
                     smsAdapter.submitList(emptyList())
-                    applySyncModeAndUpdateUI()
+                    updateTrialAndSyncStatusUI()
                     dialog.dismiss()
                     Toast.makeText(this, "Đã đăng xuất tài khoản", Toast.LENGTH_SHORT).show()
                 }
@@ -140,15 +211,22 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        switchAutoSync.isChecked = SyncPrefs.isAutoSync(this)
-        switchAutoSync.setOnCheckedChangeListener { _, isChecked ->
-            SyncPrefs.setAutoSync(this, isChecked)
-            applySyncModeAndUpdateUI()
-            val modeMsg = if (isChecked) "Đã bật Tự động đồng bộ" else "Đã chuyển sang Đồng bộ thủ công"
-            Toast.makeText(this, modeMsg, Toast.LENGTH_SHORT).show()
+        // Nếu hết hạn mà chưa mua thì khóa công tắc tự động đồng bộ
+        if (isExpired && !isPro) {
+            switchAutoSync.isChecked = false
+            switchAutoSync.isEnabled = false
+            SyncPrefs.setAutoSync(this, false)
+        } else {
+            switchAutoSync.isEnabled = true
+            switchAutoSync.isChecked = SyncPrefs.isAutoSync(this)
+            switchAutoSync.setOnCheckedChangeListener { _, isChecked ->
+                SyncPrefs.setAutoSync(this, isChecked)
+                updateTrialAndSyncStatusUI()
+                val modeMsg = if (isChecked) "Đã bật Tự động đồng bộ" else "Đã chuyển sang Đồng bộ thủ công"
+                Toast.makeText(this, modeMsg, Toast.LENGTH_SHORT).show()
+            }
         }
 
-        // Cấu hình Spinner chọn giới hạn tin nhắn (10, 20, 30, 50)
         val limitOptions = arrayOf("10 tin nhắn gần nhất", "20 tin nhắn gần nhất", "30 tin nhắn gần nhất", "50 tin nhắn gần nhất")
         val limitValues = intArrayOf(10, 20, 30, 50)
         
@@ -165,7 +243,7 @@ class MainActivity : AppCompatActivity() {
                 val chosenLimit = limitValues[position]
                 if (chosenLimit != SyncPrefs.getSmsLimit(this@MainActivity)) {
                     SyncPrefs.setSmsLimit(this@MainActivity, chosenLimit)
-                    applySyncModeAndUpdateUI()
+                    updateTrialAndSyncStatusUI()
                     Toast.makeText(this@MainActivity, "Đã chọn giới hạn: $chosenLimit tin", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -178,6 +256,20 @@ class MainActivity : AppCompatActivity() {
     private fun applySyncModeAndUpdateUI() {
         val user = auth.currentUser
         val isAuto = SyncPrefs.isAutoSync(this)
+        val isExpired = SyncPrefs.isTrialExpired(this)
+        val isPro = SyncPrefs.isPro(this)
+
+        if (isExpired && !isPro) {
+            tvSyncModeStatus.text = "Chế độ: Đã khóa (Hết hạn dùng thử 90 ngày)"
+            statusDot.setBackgroundResource(android.R.drawable.presence_busy)
+            firestoreListener?.remove()
+            firestoreListener = null
+            smsAdapter.submitList(emptyList())
+            tvEmptyState.visibility = View.VISIBLE
+            tvEmptyState.text = "⚠️ Ứng dụng đã hết hạn dùng thử 90 ngày.
+Vui lòng mua ứng dụng qua Google Play để mở khóa!"
+            return
+        }
 
         if (user == null) {
             tvSubtitle.text = "Chưa kết nối tài khoản • Bấm Cài đặt để đăng nhập"
@@ -234,6 +326,9 @@ class MainActivity : AppCompatActivity() {
     private fun renderSmsList(documents: List<DocumentSnapshot>) {
         smsAdapter.submitList(documents)
         tvEmptyState.visibility = if (documents.isEmpty()) View.VISIBLE else View.GONE
+        if (documents.isEmpty()) {
+            tvEmptyState.text = "Chưa có tin nhắn nào được đồng bộ"
+        }
     }
 
     private fun resyncLocalSmsToCloud(maxCount: Int) {
@@ -347,7 +442,7 @@ class MainActivity : AppCompatActivity() {
             auth.signInWithCredential(credential).addOnCompleteListener(this) { authTask ->
                 if (authTask.isSuccessful) {
                     Toast.makeText(this, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
-                    applySyncModeAndUpdateUI()
+                    updateTrialAndSyncStatusUI()
                 }
             }
         } catch (e: ApiException) {
