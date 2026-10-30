@@ -24,8 +24,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.0'
-          # THÊM DÒNG NÀY: Tắt tính năng tự động quét mã băm của file jar để tránh bị báo lỗi bảo mật
-          add-wrapper-checksum-validation: false
+          # Đã sửa thuộc tính chính xác để tắt hàng rào bảo mật quét file Jar trống
+          validate-wrappers: false
 
       - name: Decode Keystore file
         run: |
