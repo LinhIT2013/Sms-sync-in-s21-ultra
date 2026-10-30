@@ -40,12 +40,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
 import android.content.Context
-import android.os.Bundle
-import android.view.View
-import android.widget.Button
 import android.widget.RelativeLayout
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import com.android.billingclient.api.*
 class MainActivity : AppCompatActivity() {
 
