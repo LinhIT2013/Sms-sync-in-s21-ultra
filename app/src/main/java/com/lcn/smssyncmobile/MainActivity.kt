@@ -116,8 +116,10 @@ class MainActivity : AppCompatActivity() {
 
         billingClient.queryProductDetailsAsync(params) { res, list ->
             if (res.responseCode == BillingClient.BillingResponseCode.OK && list.isNotEmpty()) {
-                billingClient.launchBillingFlow(this, BillingFlowParams.newBuilder()
-                    .setProductDetailsParamsList(listOf(BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(list).build())).build())
+                val productDetails = list[0] // SỬA LỖI 1: Lấy phần tử đầu tiên của danh sách thay vì truyền cả một List
+                val flowParams = BillingFlowParams.newBuilder()
+                    .setProductDetailsParamsList(listOf(BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(productDetails).build())).build()
+                billingClient.launchBillingFlow(this, flowParams)
             } else {
                 runOnUiThread { Toast.makeText(this, "Lỗi kết nối CH Play", Toast.LENGTH_SHORT).show() }
             }
@@ -162,6 +164,7 @@ class MainActivity : AppCompatActivity() {
         val switchSync = view.findViewById<SwitchMaterial>(R.id.switchAutoSync)
         val spinnerLimit = view.findViewById<Spinner>(R.id.spinnerSmsLimit)
         
+        // SỬA LỖI 2: Thêm dấu hỏi chấm (?.) đề phòng layout XML của bạn thiếu nút này không gây lỗi Unresolved reference
         view.findViewById<Button>(R.id.btnMenuBuyPremium)?.setOnClickListener { launchBillingFlow() }
 
         val user = auth.currentUser
@@ -259,7 +262,15 @@ class MainActivity : AppCompatActivity() {
         do {
             val time = cursor.getLong(cursor.getColumnIndexOrThrow(Telephony.Sms.DATE))
             val sender = cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)) ?: "Unknown"
-            batch.set(colRef.document("${time}_${sender.hashCode()}"), hashMapOf("sender" to sender, "body" to cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: "", "timestamp" to time, "deviceModel" to "${Build.MANUFACTURER} ${Build.MODEL}", "syncedAt" to System.currentTimeMillis()))
+            // SỬA LỖI 3: Khai báo rõ kiểu dữ liệu hashMapOf<String, Any>() để tránh lỗi ép kiểu Serializable
+            val smsData = hashMapOf<String, Any>(
+                "sender" to sender,
+                "body" to (cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""),
+                "timestamp" to time,
+                "deviceModel" to "${Build.MANUFACTURER} ${Build.MODEL}",
+                "syncedAt" to System.currentTimeMillis()
+            )
+            batch.set(colRef.document("${time}_${sender.hashCode()}"), smsData)
         } while (cursor.moveToNext())
         cursor.close()
         batch.commit().addOnCompleteListener { btnResync.isEnabled = true; if (it.isSuccessful && !SyncPrefs.isAutoSync(this)) manualRefreshFromCloud() }
