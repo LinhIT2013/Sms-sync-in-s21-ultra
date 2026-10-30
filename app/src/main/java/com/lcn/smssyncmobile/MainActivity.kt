@@ -227,16 +227,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun queryPurchasesOnLaunch() {
-        billingClient.queryPurchasesAsync(
-            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()
-        ) { billingResult, purchaseList ->
-            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                val hasPremium = purchaseList.any { it.products.contains(premiumProductId) && it.purchaseState == Purchase.PurchaseState.PURCHASED }
-                savePremiumStatus(hasPremium)
-            }
-        }
-    }
+	private fun queryPurchasesOnLaunch() {
+		billingClient.queryPurchasesAsync(
+			QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()
+		) { billingResult, purchaseList ->
+			if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchaseList != null) {
+				val hasPremium = purchaseList.any { purchase ->
+					purchase.products.contains(premiumProductId) && purchase.purchaseState == Purchase.PurchaseState.PURCHASED
+				}
+				savePremiumStatus(hasPremium)
+			} else {
+				savePremiumStatus(false)
+			}
+		}
+	}
+
 
     private fun savePremiumStatus(isPremium: Boolean) {
         val sharedPref = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
