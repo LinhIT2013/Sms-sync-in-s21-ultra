@@ -50,5 +50,5 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     // Google Play Billing Library phiên bản mới nhất (Billing 8.x tương thích Google Play Console mới nhất)
-    implementation("com.android.billingclient:billing-ktx:8.0.0")
+    implementation("com.android.billingclient:billing-ktx:6.1.0")
 }
