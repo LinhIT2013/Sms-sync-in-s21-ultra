@@ -1,157 +1,45 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<!-- Màn hình khóa sẽ hiển thị đè lên toàn bộ ứng dụng khi hết hạn dùng thử -->
+<RelativeLayout
+    android:id="@+id/layoutLockScreen"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F2F2F7"
-    android:orientation="vertical">
+    android:background="#E6000000"
+    android:gravity="center"
+    android:visibility="gone"
+    android:clickable="true"
+    android:focusable="true">
 
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingStart="24dp"
-        android:paddingTop="42dp"
-        android:paddingEnd="24dp"
-        android:paddingBottom="16dp">
-
-        <RelativeLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Tin nhắn đồng bộ"
-                android:textColor="#000000"
-                android:textSize="28sp"
-                android:fontFamily="sans-serif-medium"
-                android:textStyle="bold" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnOpenSettings"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:layout_alignParentEnd="true"
-                android:layout_centerVertical="true"
-                android:text="⚙️ Cài đặt"
-                android:textAllCaps="false"
-                android:textColor="#0381FE"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                app:rippleColor="#200381FE" />
-        </RelativeLayout>
+        android:gravity="center"
+        android:padding="24dp">
 
         <TextView
-            android:id="@+id/tvSubtitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Chưa kết nối tài khoản Google"
-            android:textColor="#6E6E73"
-            android:textSize="14sp" />
+            android:text="🔒 Hết hạn dùng thử"
+            android:textColor="#FFFFFF"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Ứng dụng đã dùng hết 5 ngày miễn phí. Vui lòng mua bản quyền (60.000đ) để tiếp tục sử dụng dịch vụ."
+            android:textColor="#CCCCCC"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="24dp"/>
+
+        <Button
+            android:id="@+id/btnBuyPremiumLock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Mua Bản Quyền (60.000đ)"
+            android:backgroundTint="#FF4500"
+            android:textColor="#FFFFFF" />
     </LinearLayout>
-
-    <com.google.android.material.card.MaterialCardView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="14dp"
-        app:cardBackgroundColor="#FFFFFF"
-        app:cardCornerRadius="24dp"
-        app:cardElevation="0dp"
-        app:strokeWidth="0dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="18dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:layout_marginBottom="14dp">
-
-                <View
-                    android:id="@+id/statusDot"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
-                    android:background="@android:drawable/presence_online" />
-
-                <TextView
-                    android:id="@+id/tvSyncModeStatus"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:text="Chế độ: Tự động đồng bộ"
-                    android:textColor="#1C1C1E"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnResync"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_marginEnd="6dp"
-                    android:layout_weight="1"
-                    android:backgroundTint="#E8F2FF"
-                    android:text="⬆️ Đồng bộ lại"
-                    android:textAllCaps="false"
-                    android:textColor="#0381FE"
-                    android:textStyle="bold"
-                    app:cornerRadius="24dp"
-                    app:elevation="0dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnRefresh"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="6dp"
-                    android:layout_weight="1"
-                    android:backgroundTint="#0381FE"
-                    android:text="🔄 Làm mới"
-                    android:textAllCaps="false"
-                    android:textColor="#FFFFFF"
-                    android:textStyle="bold"
-                    app:cornerRadius="24dp"
-                    app:elevation="0dp" />
-            </LinearLayout>
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rvSmsList"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="24dp" />
-
-        <TextView
-            android:id="@+id/tvEmptyState"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="Chưa có tin nhắn nào được đồng bộ"
-            android:textColor="#8E8E93"
-            android:textSize="15sp"
-            android:visibility="gone" />
-    </FrameLayout>
-</LinearLayout>
+</RelativeLayout>
