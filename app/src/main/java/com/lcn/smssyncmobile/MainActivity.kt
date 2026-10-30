@@ -39,11 +39,10 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
-import android.content.Context
 import android.widget.RelativeLayout
 import com.android.billingclient.api.*
-class MainActivity : AppCompatActivity() {
 
+class MainActivity : AppCompatActivity() {
     private lateinit var auth: FirebaseAuth
     private lateinit var db: FirebaseFirestore
     private lateinit var googleSignInClient: GoogleSignInClient
@@ -57,7 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvEmptyState: TextView
     private lateinit var smsAdapter: SmsAdapter
     private lateinit var billingClient: BillingClient
-    private val premiumProductId = "app_premium_license" // ID sản phẩm bạn sẽ tạo trên CH Play Console
+    private val premiumProductId = "smssyncmobile1" // ID sản phẩm bạn sẽ tạo trên CH Play Console
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
