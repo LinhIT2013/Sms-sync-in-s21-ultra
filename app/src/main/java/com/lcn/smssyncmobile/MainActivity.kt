@@ -184,7 +184,7 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun launchBillingFlow() {
+       private fun launchBillingFlow() {
         val productList = listOf(
             QueryProductDetailsParams.Product.newBuilder()
                 .setProductId(premiumProductId)
@@ -194,7 +194,7 @@ class MainActivity : AppCompatActivity() {
         val params = QueryProductDetailsParams.newBuilder().setProductList(productList).build()
 
         billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
-            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && productDetailsList.isNotEmpty()) {
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && !productDetailsList.isNullOrEmpty()) {
                 val productDetails = productDetailsList[0]
                 val billingFlowParams = BillingFlowParams.newBuilder()
                     .setProductDetailsParamsList(listOf(
@@ -209,6 +209,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
 
     private fun handlePurchase(purchase: Purchase) {
         if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
@@ -228,19 +229,20 @@ class MainActivity : AppCompatActivity() {
     }
 
 	private fun queryPurchasesOnLaunch() {
-		billingClient.queryPurchasesAsync(
-			QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()
-		) { billingResult, purchaseList ->
-			if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchaseList != null) {
-				val hasPremium = purchaseList.any { purchase ->
-					purchase.products.contains(premiumProductId) && purchase.purchaseState == Purchase.PurchaseState.PURCHASED
-				}
-				savePremiumStatus(hasPremium)
-			} else {
-				savePremiumStatus(false)
-			}
-		}
-	}
+        billingClient.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()
+        ) { billingResult, purchaseList ->
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchaseList != null) {
+                val hasPremium = purchaseList.any { purchase ->
+                    purchase.products.contains(premiumProductId) && purchase.purchaseState == Purchase.PurchaseState.PURCHASED
+                }
+                savePremiumStatus(hasPremium)
+            } else {
+                savePremiumStatus(false)
+            }
+        }
+    }
+
 
 
     private fun savePremiumStatus(isPremium: Boolean) {
