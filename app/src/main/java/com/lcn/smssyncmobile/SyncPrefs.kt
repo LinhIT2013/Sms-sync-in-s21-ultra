@@ -55,7 +55,7 @@ object SyncPrefs {
     fun getRemainingDays(context: Context): Int {
         if (isPro(context)) return 999 // Không giới hạn nếu đã mua
         val installTime = getInstallTime(context)
-        const val TRIAL_DURATION_DAYS = 90L
+        val TRIAL_DURATION_DAYS = 90L
         val elapsedMillis = System.currentTimeMillis() - installTime
         val elapsedDays = elapsedMillis / (1000 * 60 * 60 * 24)
         val remaining = TRIAL_DURATION_DAYS - elapsedDays

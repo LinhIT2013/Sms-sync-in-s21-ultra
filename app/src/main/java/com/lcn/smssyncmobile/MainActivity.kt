@@ -266,8 +266,7 @@ class MainActivity : AppCompatActivity() {
             firestoreListener = null
             smsAdapter.submitList(emptyList())
             tvEmptyState.visibility = View.VISIBLE
-            tvEmptyState.text = "⚠️ Ứng dụng đã hết hạn dùng thử 90 ngày.
-Vui lòng mua ứng dụng qua Google Play để mở khóa!"
+            tvEmptyState.text = "⚠️ Ứng dụng đã hết hạn dùng thử 90 ngày.\nVui lòng mua ứng dụng qua Google Play để mở khóa!"
             return
         }
 
