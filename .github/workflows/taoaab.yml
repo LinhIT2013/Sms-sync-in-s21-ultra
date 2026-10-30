@@ -1,0 +1,51 @@
+name: Build Android App Bundle (AAB)
+
+on:
+  push:
+    branches:
+      - main # Chạy tự động khi bạn push code lên nhánh main
+  workflow_dispatch: # Cho phép bạn bấm nút chạy thủ công trên GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Bước 1: Tải mã nguồn từ kho lưu trữ về máy ảo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Bước 2: Cấu hình môi trường Java (Bắt buộc để build Android)
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle' # Cache lại gradle để các lần build sau nhanh hơn
+
+      # Bước 3: Cấp quyền thực thi cho file gradlew (Dành cho máy ảo Linux)
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Bước 4: Giải mã file Keystore dùng để ký ứng dụng (Signed AAB)
+      # Xem phần hướng dẫn cấu hình Secret bên dưới
+      - name: Decode Keystore file
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > app/lcn_release.jks
+
+      # Bước 5: Chạy lệnh build file AAB phiên bản Release
+      - name: Build Release AAB
+        run: ./gradlew bundleRelease
+        env:
+          MYAPP_RELEASE_STORE_FILE: release-key.jks
+          MYAPP_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MYAPP_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MYAPP_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      # Bước 6: Đẩy file .aab đã build xong lên mục Artifacts của GitHub để bạn tải về
+      - name: Upload AAB Artifact
+        uses: actions/artifacts-upload@v4
+        with:
+          name: release-aab
+          path: app/build/outputs/bundle/release/*.aab
+          retention-days: 7 # Lưu trữ file trên GitHub trong 7 ngày
