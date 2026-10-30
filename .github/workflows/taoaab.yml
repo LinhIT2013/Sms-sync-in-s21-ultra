@@ -35,12 +35,12 @@ jobs:
 
       # Bước 5: Chạy lệnh build file AAB phiên bản Release
       - name: Build Release AAB
-        run: sh gradlew bundleRelease
+        run: gradle bundleRelease
         env:
           MYAPP_RELEASE_STORE_FILE: release-key.jks
-          MYAPP_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          MYAPP_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          MYAPP_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MYAPP_RELEASE_STORE_PASSWORD: "123456"
+          MYAPP_RELEASE_KEY_ALIAS: "lcn_key"
+          MYAPP_RELEASE_KEY_PASSWORD: "123456"
 
       # Bước 6: Đẩy file .aab đã build xong lên mục Artifacts của GitHub để bạn tải về
       - name: Upload AAB Artifact
