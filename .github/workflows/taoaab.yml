@@ -44,8 +44,9 @@ jobs:
 
       # Bước 6: Đẩy file .aab đã build xong lên mục Artifacts của GitHub để bạn tải về
       - name: Upload AAB Artifact
-        uses: actions/artifacts-upload@v4
+        uses: actions/upload-artifact@v4 # Tên chính xác là upload-artifact thay vì artifacts-upload
         with:
           name: release-aab
           path: app/build/outputs/bundle/release/*.aab
-          retention-days: 7 # Lưu trữ file trên GitHub trong 7 ngày
+          retention-days: 7
+
