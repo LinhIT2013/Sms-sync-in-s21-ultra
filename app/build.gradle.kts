@@ -79,5 +79,5 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     implementation("androidx.work:work-runtime-ktx:2.9.1")
-    implementation("com.android.billingclient:billing:7.0.0")
+    implementation("com.android.billingclient:billing:8.0.0")
 }
