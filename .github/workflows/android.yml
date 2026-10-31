@@ -42,7 +42,7 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Build Release AAB
-        run: gradle bundleRelease
+        run: ./gradlew bundleRelease
         env:
           MYAPP_RELEASE_STORE_FILE: lcn_release.jks
           MYAPP_RELEASE_STORE_PASSWORD: "123456"
