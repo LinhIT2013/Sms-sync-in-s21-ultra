@@ -41,6 +41,14 @@ jobs:
           VERSION="v1.0.$(date +%Y%m%d%H%M%S)"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+      - name: Build Release AAB
+        run: gradle bundleRelease
+        env:
+          MYAPP_RELEASE_STORE_FILE: lcn_release.jks
+          MYAPP_RELEASE_STORE_PASSWORD: "123456"
+          MYAPP_RELEASE_KEY_ALIAS: "lcn_key"
+          MYAPP_RELEASE_KEY_PASSWORD: "123456"
+          
       - name: Create GitHub Release and Upload APK
         uses: softprops/action-gh-release@v2
         with:
